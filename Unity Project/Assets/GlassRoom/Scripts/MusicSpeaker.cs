@@ -31,6 +31,11 @@ namespace GlassRoom
 
         AudioSource m_Source;
         bool m_Paused = true;
+        // Seconds of the current track that have played. A track only counts as finished once
+        // about its whole length has played: in a web browser the music streams, and a brief
+        // hiccup (for example while walking) can make it look stopped for a moment. Treating that
+        // as "finished" used to load a new song every frame, which stopped the music and lagged.
+        float m_Played;
 
         /// <summary>True while music is playing (not paused).</summary>
         public bool IsOn => !m_Paused;
@@ -57,8 +62,14 @@ namespace GlassRoom
 
         void Update()
         {
+            if (m_Paused || m_Source.clip == null) return;
+            if (m_Source.isPlaying)
+            {
+                m_Played += Time.unscaledDeltaTime;
+                return;
+            }
             // When a track finishes on its own, move on to another one.
-            if (!m_Paused && m_Source.clip != null && !m_Source.isPlaying)
+            if (m_Played >= m_Source.clip.length - 1f)
                 PlayClip(PickNext());
         }
 
@@ -93,6 +104,7 @@ namespace GlassRoom
             if (clip == null) return;
             m_Source.clip = clip;
             m_Source.time = 0f;
+            m_Played = 0f;
             m_Source.Play();
             m_Paused = false;
             ShowState();

@@ -148,6 +148,10 @@ namespace GlassRoom
         {
             if (clip == null || tailSeconds <= 0f)
                 return clip;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Browsers decode sounds themselves, so the samples can't be read or padded there.
+            return clip;
+#endif
             // GetData needs decompressed samples; the builder imports the clips that way.
             if (clip.loadState != AudioDataLoadState.Loaded)
                 clip.LoadAudioData();
