@@ -1,0 +1,4 @@
+<!-- Keeps engine parts the web build would otherwise strip out (physics colliders added at runtime). -->
+<linker>
+  <assembly fullname="UnityEngine.PhysicsModule" preserve="all"/>
+</linker>

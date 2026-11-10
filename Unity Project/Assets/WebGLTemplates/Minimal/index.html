@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>{{{ PRODUCT_NAME }}}</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    #unity-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #000; outline: none; }
+    #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; transition: opacity 0.4s ease; }
+    #bar { width: min(60vw, 320px); height: 4px; border-radius: 2px; background: rgba(255,255,255,0.15); overflow: hidden; }
+    #fill { width: 0%; height: 100%; border-radius: 2px; background: rgba(255,255,255,0.85); transition: width 0.2s linear; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="loading"><div id="bar"><div id="fill"></div></div></div>
+  <script>
+    var canvas = document.getElementById("unity-canvas");
+    var loading = document.getElementById("loading");
+    var fill = document.getElementById("fill");
+    var config = {
+      arguments: [],
+      dataUrl: "Build/{{{ DATA_FILENAME }}}",
+      frameworkUrl: "Build/{{{ FRAMEWORK_FILENAME }}}",
+#if USE_THREADS
+      workerUrl: "Build/{{{ WORKER_FILENAME }}}",
+#endif
+#if USE_WASM
+      codeUrl: "Build/{{{ CODE_FILENAME }}}",
+#endif
+#if SYMBOLS_FILENAME
+      symbolsUrl: "Build/{{{ SYMBOLS_FILENAME }}}",
+#endif
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+      productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+      productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+      matchWebGLToCanvasSize: true,
+      // Very sharp phone screens are capped so phones don't draw far more pixels than needed.
+      devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      // Errors and warnings go to the browser console only, never on screen.
+      showBanner: function (msg, type) { console[type === "error" ? "error" : "warn"](msg); }
+    };
+    var script = document.createElement("script");
+    script.src = "Build/{{{ LOADER_FILENAME }}}";
+    script.onload = function () {
+      createUnityInstance(canvas, config, function (progress) {
+        fill.style.width = (100 * progress) + "%";
+      }).then(function () {
+        loading.style.opacity = "0";
+        setTimeout(function () { loading.remove(); }, 450);
+      }).catch(function (message) { console.error(message); });
+    };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>
