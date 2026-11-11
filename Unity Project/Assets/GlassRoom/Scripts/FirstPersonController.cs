@@ -190,6 +190,7 @@ namespace GlassRoom
 
         void Update()
         {
+            SyncPointer();
             ReadInput(out Vector2 move, out Vector2 look, out bool run);
             if (m_Camera != null && !Mathf.Approximately(m_Camera.fieldOfView, FovSettings.FieldOfView))
                 m_Camera.fieldOfView = FovSettings.FieldOfView;
@@ -520,8 +521,26 @@ namespace GlassRoom
 
         // ---------- Cursor and hints ----------
 
+        // In a browser the page captures the pointer itself, inside clicks (browsers allow it
+        // nowhere else), and the browser's actual state is what counts: the game never thinks
+        // the pointer is captured while it's still showing.
+        void SyncPointer()
+        {
+            if (!WebPage.InBrowser) return;
+            bool computer = InputModeManager.Mode == ControlMode.KeyboardMouse;
+            WebPage.SetPointer(computer, m_Hud != null && m_Hud.IsMenuOpen);
+            bool locked = WebPage.PointerLocked;
+            if (locked != (Cursor.lockState == CursorLockMode.Locked))
+            {
+                Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+                Cursor.visible = !locked;
+            }
+        }
+
         void SetCursorLocked(bool locked)
         {
+            // In a browser, only letting go is done from here; capturing happens in the page.
+            if (WebPage.InBrowser && locked) return;
             Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !locked;
         }

@@ -42,7 +42,7 @@ namespace GlassRoom
                 // A small picture of Rick Astley; it points from its centre.
                 image.sprite = Sprite.Create(rick, new Rect(0, 0, rick.width, rick.height), new Vector2(0.5f, 0.5f), 100f);
                 m_Pointer.pivot = new Vector2(0.5f, 0.5f);
-                m_Pointer.sizeDelta = new Vector2(44f, 44f);
+                m_Pointer.sizeDelta = new Vector2(60f, 60f);
             }
             else
             {

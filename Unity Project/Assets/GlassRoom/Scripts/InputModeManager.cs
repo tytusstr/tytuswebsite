@@ -50,8 +50,6 @@ namespace GlassRoom
                 LookSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(Sensitivity));
             if (PlayerPrefs.HasKey(Hints))
                 HintSettings.Enabled = PlayerPrefs.GetInt(Hints) != 0;
-            if (PlayerPrefs.HasKey(FieldOfView))
-                FovSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(FieldOfView));
             if (PlayerPrefs.HasKey(Mouse))
                 MouseSettings.Enabled = PlayerPrefs.GetInt(Mouse) != 0;
         }
@@ -129,37 +127,31 @@ namespace GlassRoom
     }
 
     /// <summary>
-    /// Field of view from the menu slider: how wide you see, in degrees. It starts in the middle
-    /// (68°, the original view) the first time, then whatever was last chosen is remembered.
+    /// Field of view from the menu slider: how wide you see, in degrees, from 50° to 120°. Each
+    /// control mode has its own: computer starts at 70° and phone at 90° the first time, then
+    /// whatever was last chosen in that mode is remembered.
     /// </summary>
     public static class FovSettings
     {
-        const float Min = 50f, Middle = 68f, Max = 95f;
-        static float s_Slider = 0.5f;
+        public const float Min = 50f, Max = 120f;
+        const float ComputerStart = 70f, PhoneStart = 90f;
+        const string ComputerKey = "GlassRoom.FieldOfView.Computer", PhoneKey = "GlassRoom.FieldOfView.Phone";
 
-        /// <summary>Slider position from 0 to 1; 0.5 is the middle.</summary>
-        public static float SliderPosition
-        {
-            get => s_Slider;
-            set
-            {
-                s_Slider = value;
-                SavedSettings.SetFloat(SavedSettings.FieldOfView, value);
-            }
-        }
+        static bool Phone => InputModeManager.Mode == ControlMode.Touchscreen;
 
-        /// <summary>The camera's vertical field of view in degrees.</summary>
+        /// <summary>The camera's vertical field of view in degrees, for the current mode.</summary>
         public static float FieldOfView
         {
-            get
-            {
-                float t = Mathf.Clamp01(s_Slider);
-                return t < 0.5f ? Mathf.Lerp(Min, Middle, t * 2f) : Mathf.Lerp(Middle, Max, (t - 0.5f) * 2f);
-            }
+            get => PlayerPrefs.GetFloat(Phone ? PhoneKey : ComputerKey, Phone ? PhoneStart : ComputerStart);
+            set => SavedSettings.SetFloat(Phone ? PhoneKey : ComputerKey, Mathf.Clamp(value, Min, Max));
         }
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => s_Slider = 0.5f;
+        /// <summary>The slider's position (0 to 1) for the current field of view.</summary>
+        public static float SliderPosition
+        {
+            get => Mathf.InverseLerp(Min, Max, FieldOfView);
+            set => FieldOfView = Mathf.Lerp(Min, Max, value);
+        }
     }
 
     /// <summary>Whether the key hints at the bottom of the screen are shown. On until switched off (then remembered).</summary>

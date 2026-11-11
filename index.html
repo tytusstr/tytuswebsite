@@ -18,9 +18,9 @@
     #enter { position: relative; z-index: 1; opacity: 0; pointer-events: none; transform: translateY(4px);
       transition: opacity 0.6s ease, transform 0.6s ease, background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
       font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
-      letter-spacing: 0.32em; text-indent: 0.32em; text-transform: uppercase;
+      letter-spacing: 0.62em; text-indent: 0.62em; text-transform: uppercase;
       color: rgba(255,255,255,0.9); background: transparent; border: 1px solid rgba(255,255,255,0.35);
-      border-radius: 10px; padding: 16px 46px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+      border-radius: 10px; padding: 16px 0; width: 179px; text-align: center; /* the original size, kept fixed */ cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
     #enter:hover, #enter:focus-visible { color: #000; background: #fff; border-color: #fff; }
     #enter:active { transform: scale(0.98); }
     /* Glitch, after CSS-Tricks' "Glitch Effect on Text": a red and a cyan copy of the word sit
@@ -175,9 +175,29 @@
       }, 2200 + Math.random() * 2400);
     }
     enter.addEventListener("mouseenter", function () { glitch(300); });
+    // Capturing the mouse pointer (for looking around in computer mode) is only allowed by
+    // browsers during a click or key press, so the page asks right inside those events: the
+    // Enter click, clicks on the game, and Q when it closes the menu. The game reports what it
+    // wants in window.gamePointer (see WebPage.jslib).
+    window.gamePointer = { computer: true, menuOpen: false };
+    function capturePointer() {
+      if (document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
+      try {
+        var p = canvas.requestPointerLock();
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    }
+    canvas.addEventListener("mousedown", function (e) {
+      if (entered && e.button === 0 && window.gamePointer.computer && !window.gamePointer.menuOpen) capturePointer();
+    }, true);
+    window.addEventListener("keydown", function (e) {
+      if (entered && (e.key === "q" || e.key === "Q") && window.gamePointer.computer && window.gamePointer.menuOpen) capturePointer();
+    }, true);
+
     function enterGame() {
       if (!ready || entered) return;
       entered = true;
+      if (window.gamePointer.computer) capturePointer();
       window.gameCovered = false;
       loading.style.opacity = "0";
       loading.style.pointerEvents = "none";

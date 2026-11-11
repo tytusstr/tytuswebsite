@@ -5,6 +5,17 @@ mergeInto(LibraryManager.library, {
     if (typeof window.hideLoading === "function") window.hideLoading();
   },
 
+  // What the game wants from the mouse pointer: captured for looking in computer mode, unless
+  // the menu is open (the page captures it inside clicks; see index.html).
+  WebPage_SetPointer: function (computer, menuOpen) {
+    window.gamePointer = { computer: !!computer, menuOpen: !!menuOpen };
+  },
+
+  // 1 while the browser really has the pointer captured.
+  WebPage_PointerLocked: function () {
+    return document.pointerLockElement ? 1 : 0;
+  },
+
   // 1 while the page's loading / Enter screen still covers the game.
   WebPage_Covered: function () {
     return window.gameCovered ? 1 : 0;

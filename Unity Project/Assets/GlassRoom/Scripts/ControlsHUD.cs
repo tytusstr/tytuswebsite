@@ -48,6 +48,7 @@ namespace GlassRoom
         // Mouse? row in computer mode.
         RectTransform m_Card, m_Lower;
         Text m_FovValue;
+        Slider m_FovSlider;
         const float CardHeight = 930f, MouseRowHeight = 80f;
         CanvasGroup m_HintGroup;
         // Phone buttons in the bottom-right corner, and computer key hints along the bottom.
@@ -197,6 +198,9 @@ namespace GlassRoom
             m_Card.sizeDelta = new Vector2(m_Card.sizeDelta.x, phone ? CardHeight : CardHeight + MouseRowHeight);
             // Each mode has its own sensitivity range, so the number changes with the mode.
             m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
+            // Each mode has its own field of view, so the slider moves to this mode's.
+            if (m_FovSlider != null) m_FovSlider.SetValueWithoutNotify(FovSettings.SliderPosition);
+            if (m_FovValue != null) m_FovValue.text = Mathf.RoundToInt(FovSettings.FieldOfView) + "°";
         }
 
         static void EnsureEventSystem()
@@ -414,7 +418,7 @@ namespace GlassRoom
 
             Label(lower, "Field of view", 24, k_Muted, -418f);
             m_FovValue = Label(lower, "", 26, k_Ink, -506f, FontStyle.Bold);
-            AddSlider(lower, -464f, "Field Of View Slider", () => FovSettings.SliderPosition, v =>
+            m_FovSlider = AddSlider(lower, -464f, "Field Of View Slider", () => FovSettings.SliderPosition, v =>
             {
                 FovSettings.SliderPosition = v;
                 m_FovValue.text = Mathf.RoundToInt(FovSettings.FieldOfView) + "°";
@@ -472,7 +476,7 @@ namespace GlassRoom
         }
 
         // A slider from 0 to 1 (the middle is 0.5), with the same look as the rest of the menu.
-        void AddSlider(RectTransform parent, float y, string name, System.Func<float> get, System.Action<float> set)
+        Slider AddSlider(RectTransform parent, float y, string name, System.Func<float> get, System.Action<float> set)
         {
             var area = NewRect(name, parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
             area.sizeDelta = new Vector2(500f, 44f);
@@ -506,6 +510,7 @@ namespace GlassRoom
             slider.maxValue = 1f;
             slider.value = get();
             slider.onValueChanged.AddListener(v => set(v));
+            return slider;
         }
 
         // "Hints" with an on/off switch: a rounded track with a sliding knob, dark when on.
