@@ -98,6 +98,39 @@ namespace GlassRoom.Editor
             AssignPlaylist(music);
         }
 
+        /// <summary>
+        /// Moves the speaker so it stands entirely on the rug (a little in from its edges) and
+        /// sits on the rug's surface instead of the floor. Only moves it as far as needed.
+        /// </summary>
+        public static void PlaceOnRug(GameObject speaker, Transform nook)
+        {
+            var rug = nook.Find("Rug");
+            if (rug == null) return;
+            const float margin = 0.06f;
+            float halfX = rug.lossyScale.x / 2f - margin, halfZ = rug.lossyScale.z / 2f - margin;
+            var b = WorldBounds(speaker);
+            // The speaker's footprint corners, in the rug's own (turned) frame.
+            var corners = new[]
+            {
+                new Vector3(b.min.x, 0f, b.min.z), new Vector3(b.max.x, 0f, b.min.z),
+                new Vector3(b.min.x, 0f, b.max.z), new Vector3(b.max.x, 0f, b.max.z)
+            };
+            float shiftX = 0f, shiftZ = 0f;
+            foreach (var c in corners)
+            {
+                Vector3 local = Quaternion.Inverse(rug.rotation) * (c - rug.position);
+                if (local.x > halfX) shiftX = Mathf.Min(shiftX, halfX - local.x);
+                if (local.x < -halfX) shiftX = Mathf.Max(shiftX, -halfX - local.x);
+                if (local.z > halfZ) shiftZ = Mathf.Min(shiftZ, halfZ - local.z);
+                if (local.z < -halfZ) shiftZ = Mathf.Max(shiftZ, -halfZ - local.z);
+            }
+            Vector3 move = rug.rotation * new Vector3(shiftX, 0f, shiftZ);
+            float rugTop = rug.position.y + rug.lossyScale.y / 2f;
+            move.y = rugTop - b.min.y;
+            speaker.transform.position += move;
+            EditorUtility.SetDirty(speaker.transform);
+        }
+
         const string MusicFolder = "Assets/GlassRoom/Audio/Music";
         // The track the speaker always opens with (matched by name in the Music folder).
         const string OpeningTrack = "atmospheric-piano";

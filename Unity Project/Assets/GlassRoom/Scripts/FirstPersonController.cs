@@ -19,7 +19,7 @@ namespace GlassRoom
         public float acceleration = 10f;
         public float gravity = 20f;
         [Tooltip("Upward speed when jumping (Space, or the Jump button on a phone).")]
-        public float jumpSpeed = 5f;
+        public float jumpSpeed = 6.6f;
 
         [Header("Look")]
         public float mouseSensitivity = 0.16f;

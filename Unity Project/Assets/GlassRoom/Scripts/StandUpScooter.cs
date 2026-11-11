@@ -108,7 +108,7 @@ namespace GlassRoom
             {
                 Vector3 centre = box.transform.TransformPoint(box.center);
                 Vector3 half = Vector3.Scale(box.size, box.transform.lossyScale) * 0.5f;
-                half.y *= 0.8f; // clear the floor
+                half.y *= 0.6f; // clear the floor
                 foreach (var hit in Physics.BoxCastAll(centre, half, direction, transform.rotation, length + 0.02f,
                              Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
                 {

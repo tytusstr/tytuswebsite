@@ -377,6 +377,9 @@ namespace GlassRoom
             card.sizeDelta = new Vector2(620f, CardHeight);
             m_Card = card;
             AddImage(card.gameObject, new Color(0.98f, 0.98f, 0.98f, 0.97f), UISprites.RoundedPanel, true, 20f);
+            // Clicks on the card itself (between controls, or letting go of a slider) stop here
+            // instead of reaching the backdrop behind it, which closes the menu.
+            card.gameObject.AddComponent<ClickCatcher>();
 
             Label(card, "Settings", 36, k_Ink, -58f, FontStyle.Bold);
             m_FrameRate = Label(card, "", 20, k_Muted, -36f);

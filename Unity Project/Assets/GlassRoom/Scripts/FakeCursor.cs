@@ -15,6 +15,8 @@ namespace GlassRoom
     /// </summary>
     public class FakeCursor : MonoBehaviour
     {
+        // How far the pointer moves for a given mouse movement.
+        const float Speed = 1.5f;
         RectTransform m_Canvas;
         RectTransform m_Pointer;
         BaseInputModule m_RealInput;
@@ -87,7 +89,7 @@ namespace GlassRoom
             var mouse = Mouse.current;
             if (mouse == null || m_Event == null || EventSystem.current == null) return;
 
-            Vector2 delta = mouse.delta.ReadValue();
+            Vector2 delta = mouse.delta.ReadValue() * Speed;
             m_Position += delta;
             m_Position.x = Mathf.Clamp(m_Position.x, 0f, Screen.width);
             m_Position.y = Mathf.Clamp(m_Position.y, 0f, Screen.height);

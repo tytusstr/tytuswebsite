@@ -20,7 +20,7 @@ namespace GlassRoom.Editor
         public static GameObject Build(Transform parent, Vector3 position, float yaw)
         {
             var deckMat = Material("Scooter Deck", new Color(0.15f, 0.155f, 0.17f), 0.55f, 0.6f);
-            var aluminium = Material("Scooter Aluminium", new Color(0.78f, 0.79f, 0.81f), 0.72f, 1f);
+            var aluminium = Material("Scooter Aluminium", new Color(0.78f, 0.79f, 0.81f), 0.42f, 1f); // brushed: polished, its mirror image on the floor showed it white
             var rubber = Material("Scooter Rubber", new Color(0.03f, 0.03f, 0.035f), 0.18f, 0f);
             var screen = Material("Scooter Display", new Color(0.02f, 0.025f, 0.03f), 0.95f, 0f, new Color(0.35f, 0.75f, 1f) * 0.6f);
             var accent = Material("Scooter Light", Color.white, 0.9f, 0f, new Color(0.9f, 0.95f, 1f) * 3f);
@@ -109,12 +109,16 @@ namespace GlassRoom.Editor
                 if (existing != null) Object.DestroyImmediate(existing.gameObject);
             }
 
+            // Only as tall as the deck, so you can jump up and stand on the deck. The pole and
+            // handlebar have their own solid shapes (the click areas below), so you can stand
+            // on those too. (It used to be a 1.2 m tall box: an invisible wall.)
             var blocker = new GameObject("Blocker");
             blocker.layer = 2; // Ignore Raycast: blocks walking, never clicks.
             blocker.transform.SetParent(t, false);
             var box = blocker.AddComponent<BoxCollider>();
-            box.center = new Vector3(0f, 0.6f, 0f);
-            box.size = new Vector3(DeckWidth + 0.08f, 1.2f, DeckLength + 0.06f);
+            float deckHeight = DeckBottom + DeckThickness + 0.01f;
+            box.center = new Vector3(0f, deckHeight / 2f, 0f);
+            box.size = new Vector3(DeckWidth + 0.04f, deckHeight, DeckLength + 0.04f);
 
             var areas = new GameObject("Click Areas").transform;
             areas.SetParent(t, false);

@@ -112,12 +112,41 @@ namespace GlassRoom.Editor
                 EditorUtility.SetDirty(player);
             }
 
+            MakeMirrorWalls(hall.transform);
+            if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
+
             AllowAnyOrientation();
 
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             Debug.Log("Glass Room updated.");
+        }
+
+        // The four walls become live mirrors (MirrorSurface + the Mirror Wall shader), like the
+        // floor, so their reflections are exact instead of a pre-captured approximation.
+        static void MakeMirrorWalls(Transform hall)
+        {
+            string path = Root + "/Materials/Mirror Wall.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("GlassRoom/Mirror Wall"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            var walls = hall.Find("Walls");
+            if (walls == null) return;
+            foreach (string name in new[] { "North Wall", "South Wall", "East Wall", "West Wall" })
+            {
+                var wall = walls.Find(name);
+                if (wall == null) continue;
+                wall.GetComponent<MeshRenderer>().sharedMaterial = mat;
+                if (wall.GetComponent<MirrorSurface>() == null) wall.gameObject.AddComponent<MirrorSurface>();
+                // Combined (batched) walls can't each show their own mirror image.
+                var flags = GameObjectUtility.GetStaticEditorFlags(wall.gameObject);
+                GameObjectUtility.SetStaticEditorFlags(wall.gameObject, flags & ~StaticEditorFlags.BatchingStatic);
+                EditorUtility.SetDirty(wall.gameObject);
+            }
         }
 
         // Phone builds rotate with the phone: portrait and landscape, either way up.
@@ -677,8 +706,8 @@ namespace GlassRoom.Editor
         }
 
         /// <summary>
-        /// Re-captures the hall's reflections into the walls and ceiling, including the plants,
-        /// seating and lamp, then saves the scene.
+        /// Re-captures the hall's soft reflections (used by the ceiling, and by the walls on Low
+        /// graphics), then saves the scene.
         /// </summary>
         [MenuItem("Tools/Glass Room/Bake Reflections")]
         public static void BakeAllReflections()
@@ -689,14 +718,15 @@ namespace GlassRoom.Editor
                 Debug.LogWarning("Open the Glass Room scene first.");
                 return;
             }
-            // Only objects marked as not moving show up in captured reflections. The scooter
-            // moves, so it stays out.
+            // Plants, seating and the lamp stay out of the capture: a capture can only place
+            // things correctly that lie on the walls themselves, so they'd show as ghosts in the
+            // wrong place. The walls' live mirrors (MirrorSurface) show them exactly.
             var props = hall.transform.Find("Plants and Seating");
             if (props != null)
                 foreach (var r in props.GetComponentsInChildren<Renderer>(true))
                 {
                     var flags = GameObjectUtility.GetStaticEditorFlags(r.gameObject);
-                    GameObjectUtility.SetStaticEditorFlags(r.gameObject, flags | StaticEditorFlags.ReflectionProbeStatic);
+                    GameObjectUtility.SetStaticEditorFlags(r.gameObject, flags & ~StaticEditorFlags.ReflectionProbeStatic);
                 }
             // One capture for the whole hall (see FitHallProbe); the old part-hall ones are
             // switched off. The skylight's own small capture stays.

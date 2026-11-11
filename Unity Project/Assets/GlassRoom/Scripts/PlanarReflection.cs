@@ -115,11 +115,15 @@ namespace GlassRoom
             // The floor itself is left out by layer (see Prepare), and nothing else lies below it.
             cam.projectionMatrix = main.projectionMatrix;
 
+            // The walls' mirrors show their plain look inside the floor's reflection; their live
+            // images belong to the main view (see MirrorSurface).
+            Shader.SetGlobalFloat("_MirrorsDisabled", 1f);
             var request = new UniversalRenderPipeline.SingleCameraRequest { destination = m_Texture };
             if (RenderPipeline.SupportsRenderRequest(cam, request))
                 RenderPipeline.SubmitRenderRequest(cam, request);
             else
                 cam.Render();
+            Shader.SetGlobalFloat("_MirrorsDisabled", 0f);
 
             Shader.SetGlobalTexture(k_TextureId, m_Texture);
             Shader.SetGlobalFloat(k_WeightId, 1f);
