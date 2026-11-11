@@ -528,7 +528,8 @@ namespace GlassRoom
         {
             if (m_Hud == null) return;
             bool computer = InputModeManager.Mode == ControlMode.KeyboardMouse;
-            bool menu = m_Hud.IsMenuOpen;
+            // The website's Enter screen counts as a menu: nothing is shown or timed behind it.
+            bool menu = m_Hud.IsMenuOpen || WebPage.Covered;
 
             if (computer)
             {
