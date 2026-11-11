@@ -86,6 +86,8 @@ namespace GlassRoom
         // Frame rate shown in the settings menu, smoothed so it's readable.
         void Update()
         {
+            // The game is running: the website's loading cover can go.
+            WebPage.Ready();
             m_SmoothedFrameTime = Mathf.Lerp(m_SmoothedFrameTime, Time.unscaledDeltaTime, 0.05f);
             if (IsMenuOpen)
                 m_FrameRate.text = Mathf.RoundToInt(1f / m_SmoothedFrameTime) + " fps";

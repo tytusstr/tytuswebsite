@@ -44,15 +44,25 @@
       // Errors and warnings go to the browser console only, never on screen.
       showBanner: function (msg, type) { console[type === "error" ? "error" : "warn"](msg); }
     };
+    // Removes the loading cover. The game calls this itself once it has drawn its first frame,
+    // because the loader's own "finished" signal sometimes never arrives (the game would run,
+    // with sound, behind a cover that never went away). A timer after full download is a backup.
+    var hidden = false;
+    window.hideLoading = function () {
+      if (hidden) return;
+      hidden = true;
+      loading.style.opacity = "0";
+      loading.style.pointerEvents = "none";
+      setTimeout(function () { if (loading.parentNode) loading.remove(); }, 450);
+    };
+    var backupTimer = null;
     var script = document.createElement("script");
     script.src = "Build/{{{ LOADER_FILENAME }}}";
     script.onload = function () {
       createUnityInstance(canvas, config, function (progress) {
         fill.style.width = (100 * progress) + "%";
-      }).then(function () {
-        loading.style.opacity = "0";
-        setTimeout(function () { loading.remove(); }, 450);
-      }).catch(function (message) { console.error(message); });
+        if (progress >= 1 && !backupTimer) backupTimer = setTimeout(window.hideLoading, 8000);
+      }).then(window.hideLoading).catch(function (message) { console.error(message); });
     };
     document.body.appendChild(script);
   </script>
