@@ -121,6 +121,10 @@ namespace GlassRoom
             m_StepSource.playOnAwake = false;
             m_StepSource.spatialBlend = 0f;
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Browsers can't run these sound filters; skip them on the website.
+            return;
+#endif
             // Filters run in the order they are added: darken first, then the room echo.
             var lowPass = go.AddComponent<AudioLowPassFilter>();
             lowPass.cutoffFrequency = footstepCutoff;

@@ -50,6 +50,13 @@ namespace GlassRoom
         public AudioClip stepOffClip;
 
         AudioSource m_Roll, m_Motor, m_Effects;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // In a web browser, 3D sound is recalculated every frame things move, which is heavy on
+        // phones, so the scooter is heard plainly there.
+        const float Spatial = 0f;
+#else
+        const float Spatial = 0.7f;
+#endif
         float m_Speed;
         bool m_Ridden;
 
@@ -71,7 +78,7 @@ namespace GlassRoom
             source.playOnAwake = false;
             source.volume = 0f;
             // Mostly 3D, so it comes from the scooter when someone else is near it.
-            source.spatialBlend = 0.7f;
+            source.spatialBlend = Spatial;
             source.minDistance = 2f;
             source.maxDistance = 25f;
             if (loop && clip != null) source.Play();
@@ -82,9 +89,9 @@ namespace GlassRoom
         {
             m_Ridden = ridden;
             // The rider hears it directly, at full level; others hear it from where it stands.
-            m_Roll.spatialBlend = ridden ? 0f : 0.7f;
-            m_Motor.spatialBlend = ridden ? 0f : 0.7f;
-            m_Effects.spatialBlend = ridden ? 0f : 0.7f;
+            m_Roll.spatialBlend = ridden ? 0f : Spatial;
+            m_Motor.spatialBlend = ridden ? 0f : Spatial;
+            m_Effects.spatialBlend = ridden ? 0f : Spatial;
             // While riding, the player's capsule does the colliding; the scooter's own colliders
             // become triggers so they can still be clicked.
             foreach (var c in GetComponentsInChildren<Collider>()) c.isTrigger = ridden;

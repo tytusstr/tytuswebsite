@@ -1,6 +1,7 @@
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace GlassRoom.Editor
@@ -14,6 +15,10 @@ namespace GlassRoom.Editor
     {
         public const string OutputFolder = "WebBuild";
         const string Scene = "Assets/Scenes/GlassRoom.unity";
+        // The website is built from a copy of the scene whose speaker streams songs from files
+        // (StreamingAssets/Music) instead of carrying them inside the game data.
+        const string WebScene = "Assets/Scenes/GlassRoom_Web.unity";
+        const string WebMusicFolder = "Assets/StreamingAssets/Music";
 
         [MenuItem("Tools/Glass Room/Build Website")]
         public static void Build()
@@ -21,19 +26,64 @@ namespace GlassRoom.Editor
             ApplyWebSettings();
 
             if (Directory.Exists(OutputFolder)) Directory.Delete(OutputFolder, true);
+            if (!PrepareWebScene()) return;
             var options = new BuildPlayerOptions
             {
-                scenes = new[] { Scene },
+                scenes = new[] { WebScene },
                 locationPathName = OutputFolder,
                 target = BuildTarget.WebGL,
                 options = BuildOptions.None
             };
-            var report = BuildPipeline.BuildPlayer(options);
+            BuildReport report;
+            try { report = BuildPipeline.BuildPlayer(options); }
+            finally { CleanUpWebScene(); }
             var summary = report.summary;
             if (summary.result == BuildResult.Succeeded)
                 Debug.Log($"Website build succeeded: {Path.GetFullPath(OutputFolder)} ({summary.totalSize / (1024 * 1024)} MB)");
             else
                 Debug.LogError($"Website build failed: {summary.result}, {summary.totalErrors} errors");
+        }
+
+        // Copies the songs to StreamingAssets and saves a copy of the scene whose speaker refers
+        // to those files by name. The real scene is saved first and left unchanged.
+        static bool PrepareWebScene()
+        {
+            EditorSceneManager.SaveOpenScenes();
+            var scene = EditorSceneManager.OpenScene(Scene, OpenSceneMode.Single);
+            var speaker = Object.FindAnyObjectByType<MusicSpeaker>();
+            if (speaker != null)
+            {
+                Directory.CreateDirectory(WebMusicFolder);
+                var names = new System.Collections.Generic.List<string>();
+                void Add(AudioClip clip)
+                {
+                    if (clip == null) return;
+                    string path = AssetDatabase.GetAssetPath(clip);
+                    string name = Path.GetFileName(path);
+                    File.Copy(path, Path.Combine(WebMusicFolder, name), true);
+                    names.Add(name);
+                }
+                Add(speaker.firstTrack);
+                if (speaker.playlist != null) foreach (var clip in speaker.playlist) Add(clip);
+                speaker.webTracks = names.ToArray();
+                speaker.firstTrack = null;
+                speaker.playlist = new AudioClip[0];
+            }
+            bool saved = EditorSceneManager.SaveScene(scene, WebScene, true);
+            // Reload the real scene from disk, dropping the website-only changes.
+            EditorSceneManager.OpenScene(Scene, OpenSceneMode.Single);
+            AssetDatabase.Refresh();
+            if (!saved) Debug.LogError("Website build: could not save the website copy of the scene.");
+            return saved;
+        }
+
+        static void CleanUpWebScene()
+        {
+            AssetDatabase.DeleteAsset(WebScene);
+            AssetDatabase.DeleteAsset(WebMusicFolder);
+            if (Directory.Exists("Assets/StreamingAssets") && Directory.GetFileSystemEntries("Assets/StreamingAssets").Length == 0)
+                AssetDatabase.DeleteAsset("Assets/StreamingAssets");
+            AssetDatabase.Refresh();
         }
 
         static void ApplyWebSettings()
