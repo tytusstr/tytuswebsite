@@ -57,7 +57,9 @@ namespace GlassRoom
                 m_Texture = new RenderTexture(width, height, 24, RenderTextureFormat.DefaultHDR)
                 {
                     name = "Planar Reflection",
-                    antiAliasing = 1,
+                    // Smoothed edges: thin things like the scooter's pole are narrower than a
+                    // pixel of this half-size image and would otherwise break into bright dashes.
+                    antiAliasing = 4,
                     useMipMap = false
                 };
                 m_Texture.Create();
