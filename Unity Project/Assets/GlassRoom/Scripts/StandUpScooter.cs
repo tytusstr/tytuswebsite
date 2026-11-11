@@ -42,7 +42,7 @@ namespace GlassRoom
         [Header("Sounds (recordings)")]
         [Tooltip("The electric motor hum: the riding sound.")]
         public AudioClip motorClip;
-        [Range(0f, 1f)] public float humVolume = 0.5f;
+        [Range(0f, 1f)] public float humVolume = 0.35f;
         public AudioClip stepOnClip;
         public AudioClip stepOffClip;
 
@@ -96,7 +96,28 @@ namespace GlassRoom
                 m_Effects.pitch = Random.Range(0.92f, 1.05f);
                 m_Effects.PlayOneShot(clip, 0.9f);
             }
-            if (!ridden) m_Speed = 0f;
+        }
+
+        // Rolls forward (or back) by this many metres, stopping at anything in the way.
+        void Coast(float distance)
+        {
+            if (Mathf.Approximately(distance, 0f)) return;
+            Vector3 direction = transform.forward * Mathf.Sign(distance);
+            float length = Mathf.Abs(distance);
+            if (body is BoxCollider box)
+            {
+                Vector3 centre = box.transform.TransformPoint(box.center);
+                Vector3 half = Vector3.Scale(box.size, box.transform.lossyScale) * 0.5f;
+                half.y *= 0.8f; // clear the floor
+                foreach (var hit in Physics.BoxCastAll(centre, half, direction, transform.rotation, length + 0.02f,
+                             Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                {
+                    if (hit.transform.IsChildOf(transform)) continue;
+                    m_Speed = 0f;
+                    return;
+                }
+            }
+            transform.position += direction * length;
         }
 
         /// <summary>Called every frame while riding with the signed speed in metres per second.</summary>
@@ -105,7 +126,12 @@ namespace GlassRoom
         void Update()
         {
             float dt = Time.deltaTime;
-            if (!m_Ridden) m_Speed = Mathf.MoveTowards(m_Speed, 0f, coastDeceleration * dt);
+            // Stepped off while moving: it rolls on by itself, slowing down, until it stops.
+            if (!m_Ridden && m_Speed != 0f)
+            {
+                m_Speed = Mathf.MoveTowards(m_Speed, 0f, coastDeceleration * dt);
+                Coast(m_Speed * dt);
+            }
 
             float degrees = m_Speed * dt / wheelRadius * Mathf.Rad2Deg;
             foreach (var wheel in wheels)

@@ -43,9 +43,12 @@ namespace GlassRoom
             return jump;
         }
 
-        GameObject m_TouchControls, m_Menu, m_HintBar, m_MouseRow;
-        RectTransform m_Card;
-        const float CardHeight = 780f, MouseRowHeight = 80f;
+        GameObject m_TouchControls, m_Menu, m_HintBar, m_MouseRow, m_QNote;
+        // m_Lower holds everything below the Controls row; it moves down to make room for the
+        // Mouse? row in computer mode.
+        RectTransform m_Card, m_Lower;
+        Text m_FovValue;
+        const float CardHeight = 930f, MouseRowHeight = 80f;
         CanvasGroup m_HintGroup;
         // Phone buttons in the bottom-right corner, and computer key hints along the bottom.
         readonly GameObject[] m_ContextButtons = new GameObject[2];
@@ -184,6 +187,8 @@ namespace GlassRoom
             m_PhoneButtonBg.color = phone ? k_Accent : k_Idle;
             m_PhoneButtonText.color = phone ? Color.white : k_Ink;
             m_MouseRow.SetActive(!phone);
+            m_QNote.SetActive(!phone);
+            m_Lower.anchoredPosition = new Vector2(0f, phone ? 0f : -MouseRowHeight);
             m_Card.sizeDelta = new Vector2(m_Card.sizeDelta.x, phone ? CardHeight : CardHeight + MouseRowHeight);
             // Each mode has its own sensitivity range, so the number changes with the mode.
             m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
@@ -377,18 +382,41 @@ namespace GlassRoom
             (m_PhoneButtonBg, m_PhoneButtonText) = AddChoice(card, "Phone", new Vector2(128f, -178f),
                 () => InputModeManager.Mode = ControlMode.Touchscreen);
 
-            Label(card, "Look sensitivity", 24, k_Muted, -262f);
-            m_SensitivityValue = Label(card, "", 26, k_Ink, -350f, FontStyle.Bold);
-            AddSensitivitySlider(card, -308f);
+            // Computer mode only: right under the Controls choice; the rest moves down for it.
+            m_MouseRow = AddSwitch(card, -258f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
+            // Computer mode only: a small reminder in the top-left corner.
+            var qNote = Label(card, "Press Q to open settings", 20, k_Muted, -36f);
+            qNote.alignment = TextAnchor.UpperLeft;
+            qNote.rectTransform.offsetMin = new Vector2(28f, qNote.rectTransform.offsetMin.y);
+            m_QNote = qNote.gameObject;
 
-            Label(card, "Graphics", 24, k_Muted, -418f);
-            (m_FullButtonBg, m_FullButtonText) = AddChoice(card, "Full", new Vector2(-128f, -478f), () => SetGraphics(false));
-            (m_LowButtonBg, m_LowButtonText) = AddChoice(card, "Low", new Vector2(128f, -478f), () => SetGraphics(true));
+            var lower = NewRect("Lower Settings", card, new Vector2(0f, 1f), new Vector2(1f, 1f));
+            m_Lower = lower;
+
+            Label(lower, "Look sensitivity", 24, k_Muted, -262f);
+            m_SensitivityValue = Label(lower, "", 26, k_Ink, -350f, FontStyle.Bold);
+            AddSlider(lower, -308f, "Sensitivity Slider", () => LookSettings.SliderPosition, v =>
+            {
+                LookSettings.SliderPosition = v;
+                m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
+            });
+            m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
+
+            Label(lower, "Field of view", 24, k_Muted, -418f);
+            m_FovValue = Label(lower, "", 26, k_Ink, -506f, FontStyle.Bold);
+            AddSlider(lower, -464f, "Field Of View Slider", () => FovSettings.SliderPosition, v =>
+            {
+                FovSettings.SliderPosition = v;
+                m_FovValue.text = Mathf.RoundToInt(FovSettings.FieldOfView) + "°";
+            });
+            m_FovValue.text = Mathf.RoundToInt(FovSettings.FieldOfView) + "°";
+
+            Label(lower, "Graphics", 24, k_Muted, -574f);
+            (m_FullButtonBg, m_FullButtonText) = AddChoice(lower, "Full", new Vector2(-128f, -634f), () => SetGraphics(false));
+            (m_LowButtonBg, m_LowButtonText) = AddChoice(lower, "Low", new Vector2(128f, -634f), () => SetGraphics(true));
             ShowGraphics(GraphicsQuality.Low);
 
-            AddSwitch(card, -568f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on);
-            // Only in computer mode; the card grows to fit it.
-            m_MouseRow = AddSwitch(card, -648f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
+            AddSwitch(lower, -724f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on);
 
             var done = NewRect("Done", card, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
             done.sizeDelta = new Vector2(500f, 84f);
@@ -433,9 +461,10 @@ namespace GlassRoom
             return (bg, AddText(rect, label, 30, k_Ink, FontStyle.Bold));
         }
 
-        void AddSensitivitySlider(RectTransform parent, float y)
+        // A slider from 0 to 1 (the middle is 0.5), with the same look as the rest of the menu.
+        void AddSlider(RectTransform parent, float y, string name, System.Func<float> get, System.Action<float> set)
         {
-            var area = NewRect("Sensitivity Slider", parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            var area = NewRect(name, parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
             area.sizeDelta = new Vector2(500f, 44f);
             area.anchoredPosition = new Vector2(0f, y);
 
@@ -462,16 +491,11 @@ namespace GlassRoom
             slider.handleRect = handle;
             slider.targetGraphic = knob;
             slider.direction = Slider.Direction.LeftToRight;
-            // The slider moves along a curve (see LookSettings); the label shows the actual multiplier.
+            // The value moves along a curve around the middle; the label shows the actual value.
             slider.minValue = 0f;
             slider.maxValue = 1f;
-            slider.value = LookSettings.SliderPosition;
-            slider.onValueChanged.AddListener(v =>
-            {
-                LookSettings.SliderPosition = v;
-                m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
-            });
-            m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
+            slider.value = get();
+            slider.onValueChanged.AddListener(v => set(v));
         }
 
         // "Hints" with an on/off switch: a rounded track with a sliding knob, dark when on.

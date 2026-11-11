@@ -106,6 +106,9 @@ namespace GlassRoom.Editor
         /// Gives the speaker every track in the Music folder: the opening track first, the rest
         /// shuffled after it. Tracks stream from disk instead of all sitting in memory.
         /// </summary>
+        // A recorded button click (Kenney, CC0) for pressing the speaker's buttons.
+        const string ClickSound = "Assets/GlassRoom/Audio/Speaker/Button Click.wav";
+
         public static void AssignPlaylist(MusicSpeaker music)
         {
             var tracks = new List<AudioClip>();
@@ -130,6 +133,10 @@ namespace GlassRoom.Editor
             }
             music.firstTrack = first;
             music.playlist = tracks.ToArray();
+            music.clickClip = AssetDatabase.LoadAssetAtPath<AudioClip>(ClickSound);
+            // Heard over 70% of the original distances (full volume within 7 m, fading to 90 m).
+            music.fullVolumeDistance = 4.9f;
+            music.maxDistance = 63f;
             EditorUtility.SetDirty(music);
         }
 

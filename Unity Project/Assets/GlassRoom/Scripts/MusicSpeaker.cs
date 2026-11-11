@@ -25,11 +25,14 @@ namespace GlassRoom
         [Tooltip("Website build only: song file names in StreamingAssets/Music, first track first. Filled in by Tools > Glass Room > Build Website.")]
         public string[] webTracks;
         [Range(0f, 1f)] public float volume = 0.8f;
+        [Tooltip("Played when a button is pressed: play, pause or skip.")]
+        public AudioClip clickClip;
+        [Range(0f, 1f)] public float clickVolume = 0.6f;
         public bool playOnStart = true;
         [Tooltip("Within this distance the music plays at full volume, in metres.")]
-        public float fullVolumeDistance = 7f;
+        public float fullVolumeDistance = 4.9f;
         [Tooltip("Beyond this distance the music stops getting quieter, in metres.")]
-        public float maxDistance = 90f;
+        public float maxDistance = 63f;
 
         [Header("Status light")]
         public Renderer statusLight;
@@ -56,6 +59,9 @@ namespace GlassRoom
 #endif
 
         AudioSource m_Source;
+        AudioSource m_Click;
+        // A press waiting for its click to finish before the music starts.
+        Coroutine m_Pending;
         bool m_Paused = true;
         bool m_Web;
         // Index of the current track: 0 is the first track, the rest are the playlist.
@@ -74,6 +80,10 @@ namespace GlassRoom
         void Awake()
         {
             m_Web = UseWeb(this);
+            m_Click = gameObject.AddComponent<AudioSource>();
+            m_Click.playOnAwake = false;
+            m_Click.loop = false;
+            m_Click.spatialBlend = 0f;
             if (m_Web) return;
             m_Source = gameObject.AddComponent<AudioSource>();
             m_Source.loop = false;
@@ -94,7 +104,7 @@ namespace GlassRoom
 
         void Update()
         {
-            if (m_Paused || m_Current < 0) return;
+            if (m_Paused || m_Current < 0 || m_Pending != null) return;
             if (m_Web)
             {
                 UpdateWebVolume();
@@ -125,18 +135,26 @@ namespace GlassRoom
             WebMusic_SetVolume(target);
         }
 
+        // Play: click, then the music. Pause: the music stops, then click.
         public void TogglePlayPause()
         {
             if (TooSoon()) return;
-            if (m_Paused) Resume();
-            else Pause();
+            if (m_Paused) AfterClick(Resume);
+            else
+            {
+                Pause();
+                Click();
+            }
         }
 
         /// <summary>Skips to a random different track. Does nothing while paused.</summary>
         public void Skip()
         {
             if (m_Paused || TooSoon()) return;
-            PlayTrack(PickNext());
+            // The music stops, a click, then the next song.
+            StopForSkip();
+            int next = PickNext();
+            AfterClick(() => PlayTrack(next));
         }
 
         // A single tap can arrive twice on some phones; presses closer together than this are
@@ -146,6 +164,37 @@ namespace GlassRoom
             if (Time.unscaledTime - m_LastPress < 0.3f) return true;
             m_LastPress = Time.unscaledTime;
             return false;
+        }
+
+        void Click()
+        {
+            if (clickClip != null) m_Click.PlayOneShot(clickClip, clickVolume);
+        }
+
+        // Clicks now, and runs the action once the click has finished. The speaker shows its
+        // new state straight away.
+        void AfterClick(System.Action action)
+        {
+            if (m_Pending != null) StopCoroutine(m_Pending);
+            Click();
+            m_Paused = false;
+            ShowState();
+            m_Pending = StartCoroutine(RunAfter(clickClip != null ? clickClip.length : 0f, action));
+        }
+
+        System.Collections.IEnumerator RunAfter(float seconds, System.Action action)
+        {
+            yield return new WaitForSecondsRealtime(seconds);
+            m_Pending = null;
+            m_Paused = true; // the action decides
+            action();
+        }
+
+        // Silences the current song before a skip (it stays "on").
+        void StopForSkip()
+        {
+            if (m_Web) WebMusic_Pause();
+            else m_Source.Stop();
         }
 
         void Resume()
@@ -160,6 +209,7 @@ namespace GlassRoom
 
         void Pause()
         {
+            if (m_Pending != null) { StopCoroutine(m_Pending); m_Pending = null; }
             if (m_Web) WebMusic_Pause();
             else m_Source.Pause();
             m_Paused = true;

@@ -148,7 +148,7 @@ namespace GlassRoom.Editor
 
             Directory.CreateDirectory(MaterialDir);
             Directory.CreateDirectory(MeshDir);
-            var glass = LitMaterial("White Glass", new Color(0.93f, 0.94f, 0.95f), 0.97f, 0.08f);
+            var glass = LitMaterial("White Glass", new Color(0.93f, 0.94f, 0.95f), 0.97f, 0.45f);
             var ceiling = LitMaterial("Ceiling", new Color(0.95f, 0.955f, 0.96f), 0.88f, 0f);
             var ring = LitMaterial("Ring Light", Color.white, 0.5f, 0f, k_WarmWhite * 9f);
             var window = WindowMaterial();
@@ -660,6 +660,47 @@ namespace GlassRoom.Editor
             probe.clearFlags = ReflectionProbeClearFlags.SolidColor;
             probe.backgroundColor = new Color(0.78f, 0.79f, 0.81f);
             return probe;
+        }
+
+        /// <summary>
+        /// Re-captures the hall's reflections into the walls and ceiling, including the plants,
+        /// seating and lamp, then saves the scene. Captures are 512 px: in Full graphics all
+        /// reflection captures share one texture of fixed size, and at 1024 px they didn't all
+        /// fit, so some walls showed no reflection at all.
+        /// </summary>
+        [MenuItem("Tools/Glass Room/Bake Reflections")]
+        public static void BakeAllReflections()
+        {
+            var hall = GameObject.Find("Glass Hall");
+            if (hall == null)
+            {
+                Debug.LogWarning("Open the Glass Room scene first.");
+                return;
+            }
+            // Only objects marked as not moving show up in captured reflections. The scooter
+            // moves, so it stays out.
+            var props = hall.transform.Find("Plants and Seating");
+            if (props != null)
+                foreach (var r in props.GetComponentsInChildren<Renderer>(true))
+                {
+                    var flags = GameObjectUtility.GetStaticEditorFlags(r.gameObject);
+                    GameObjectUtility.SetStaticEditorFlags(r.gameObject, flags | StaticEditorFlags.ReflectionProbeStatic);
+                }
+            foreach (var probe in Object.FindObjectsByType<ReflectionProbe>(FindObjectsSortMode.None))
+                if (probe.resolution > 512)
+                {
+                    probe.resolution = 512;
+                    EditorUtility.SetDirty(probe);
+                }
+            BakeReflections();
+            // Captures from before the probes saved under Reflections/ are no longer used.
+            for (int i = 0; i < 3; i++)
+                AssetDatabase.DeleteAsset($"{Root}/Reflection {i}.exr");
+
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            Debug.Log("Glass Room reflections baked.");
         }
 
         // Captures the hall into cubemaps. Baking twice lets reflections show other reflections.

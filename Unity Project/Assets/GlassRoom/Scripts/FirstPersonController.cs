@@ -63,7 +63,10 @@ namespace GlassRoom
         bool m_JumpPressed;
         // The "Space to jump" hint: waits until the menu is closed, then shows for a few seconds.
         bool m_JumpHintPending;
-        float m_JumpHintUntil;
+        // Seconds of smooth play the jump hint has been on screen. Counted only while the menu
+        // is closed, and at most a short step per frame, so the slow first moments while the
+        // page is still loading don't use it up before anyone can see it.
+        float m_JumpHintShown = float.MaxValue;
         const float JumpHintSeconds = 4f, JumpHintFade = 0.8f;
 
         // Riding.
@@ -185,14 +188,14 @@ namespace GlassRoom
         void Update()
         {
             ReadInput(out Vector2 move, out Vector2 look, out bool run);
+            if (m_Camera != null && !Mathf.Approximately(m_Camera.fieldOfView, FovSettings.FieldOfView))
+                m_Camera.fieldOfView = FovSettings.FieldOfView;
             if (m_Ride != null && InputModeManager.Mode == ControlMode.Touchscreen)
             {
-                // Riding on a phone: the joystick only drives forward and back. The finger on the
-                // right side does all the looking, up, down, left and right, and the scooter
-                // heads wherever you look.
-                m_Yaw += m_RideLookYaw + look.x;
+                // Riding on a phone: the joystick drives forward and back and steers left and
+                // right. The finger on the right side only looks up and down.
+                Ride(move);
                 m_RideLookYaw = 0f;
-                Ride(new Vector2(0f, move.y));
                 m_Pitch = Mathf.Clamp(m_Pitch - look.y, -maxPitch, maxPitch);
                 cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
             }
@@ -264,7 +267,8 @@ namespace GlassRoom
                 move.y = (Pressed(keyboard.wKey, keyboard.upArrowKey) ? 1f : 0f) - (Pressed(keyboard.sKey, keyboard.downArrowKey) ? 1f : 0f);
                 move = Vector2.ClampMagnitude(move, 1f);
                 run = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
-                m_JumpPressed = keyboard.spaceKey.wasPressedThisFrame;
+                // Holding Space keeps jumping: a new jump starts each time you land.
+                m_JumpPressed = keyboard.spaceKey.isPressed;
             }
 
             var mouse = Mouse.current;
@@ -532,8 +536,10 @@ namespace GlassRoom
                 if (m_JumpHintPending && !menu)
                 {
                     m_JumpHintPending = false;
-                    m_JumpHintUntil = Time.unscaledTime + JumpHintSeconds;
+                    m_JumpHintShown = 0f;
                 }
+                if (!menu && m_JumpHintShown < JumpHintSeconds + JumpHintFade)
+                    m_JumpHintShown += Mathf.Min(Time.unscaledDeltaTime, 0.05f);
                 var target = menu ? null : InteractableAt(ScreenCentre);
                 m_Hud.SetCrosshair(!menu, target != null);
                 m_Hud.SetContextButtons();
@@ -549,8 +555,8 @@ namespace GlassRoom
                 }
                 else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
-                else if (Time.unscaledTime < m_JumpHintUntil + JumpHintFade)
-                    m_Hud.SetKeyHints(1f - Mathf.Clamp01((Time.unscaledTime - m_JumpHintUntil) / JumpHintFade), ("Space", "to jump"));
+                else if (m_JumpHintShown < JumpHintSeconds + JumpHintFade)
+                    m_Hud.SetKeyHints(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade), ("Space", "to jump"));
                 else m_Hud.SetKeyHints();
                 return;
             }

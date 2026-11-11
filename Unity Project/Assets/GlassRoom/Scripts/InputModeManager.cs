@@ -24,6 +24,7 @@ namespace GlassRoom
         public const string LowGraphics = "GlassRoom.LowGraphics";
         public const string Hints = "GlassRoom.Hints";
         public const string Mouse = "GlassRoom.Mouse";
+        public const string FieldOfView = "GlassRoom.FieldOfView";
 
         public static void SetInt(string key, int value)
         {
@@ -49,6 +50,8 @@ namespace GlassRoom
                 LookSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(Sensitivity));
             if (PlayerPrefs.HasKey(Hints))
                 HintSettings.Enabled = PlayerPrefs.GetInt(Hints) != 0;
+            if (PlayerPrefs.HasKey(FieldOfView))
+                FovSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(FieldOfView));
             if (PlayerPrefs.HasKey(Mouse))
                 MouseSettings.Enabled = PlayerPrefs.GetInt(Mouse) != 0;
         }
@@ -118,6 +121,40 @@ namespace GlassRoom
                 float max = phone ? PhoneMax : ComputerMax;
                 // Lower half: slowest up to the middle. Upper half: middle up to the top.
                 return t < 0.5f ? Mathf.Lerp(min, mid, t * 2f) : Mathf.Lerp(mid, max, (t - 0.5f) * 2f);
+            }
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => s_Slider = 0.5f;
+    }
+
+    /// <summary>
+    /// Field of view from the menu slider: how wide you see, in degrees. It starts in the middle
+    /// (68°, the original view) the first time, then whatever was last chosen is remembered.
+    /// </summary>
+    public static class FovSettings
+    {
+        const float Min = 50f, Middle = 68f, Max = 95f;
+        static float s_Slider = 0.5f;
+
+        /// <summary>Slider position from 0 to 1; 0.5 is the middle.</summary>
+        public static float SliderPosition
+        {
+            get => s_Slider;
+            set
+            {
+                s_Slider = value;
+                SavedSettings.SetFloat(SavedSettings.FieldOfView, value);
+            }
+        }
+
+        /// <summary>The camera's vertical field of view in degrees.</summary>
+        public static float FieldOfView
+        {
+            get
+            {
+                float t = Mathf.Clamp01(s_Slider);
+                return t < 0.5f ? Mathf.Lerp(Min, Middle, t * 2f) : Mathf.Lerp(Middle, Max, (t - 0.5f) * 2f);
             }
         }
 
