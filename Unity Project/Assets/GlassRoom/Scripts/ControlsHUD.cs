@@ -43,7 +43,9 @@ namespace GlassRoom
             return jump;
         }
 
-        GameObject m_TouchControls, m_Menu, m_HintBar;
+        GameObject m_TouchControls, m_Menu, m_HintBar, m_MouseRow;
+        RectTransform m_Card;
+        const float CardHeight = 780f, MouseRowHeight = 80f;
         CanvasGroup m_HintGroup;
         // Phone buttons in the bottom-right corner, and computer key hints along the bottom.
         readonly GameObject[] m_ContextButtons = new GameObject[2];
@@ -179,6 +181,8 @@ namespace GlassRoom
             m_ComputerButtonText.color = phone ? k_Ink : Color.white;
             m_PhoneButtonBg.color = phone ? k_Accent : k_Idle;
             m_PhoneButtonText.color = phone ? Color.white : k_Ink;
+            m_MouseRow.SetActive(!phone);
+            m_Card.sizeDelta = new Vector2(m_Card.sizeDelta.x, phone ? CardHeight : CardHeight + MouseRowHeight);
             // Each mode has its own sensitivity range, so the number changes with the mode.
             m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
         }
@@ -356,7 +360,8 @@ namespace GlassRoom
             dimButton.onClick.AddListener(() => SetMenuOpen(false));
 
             var card = NewRect("Card", menu, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            card.sizeDelta = new Vector2(620f, 780f);
+            card.sizeDelta = new Vector2(620f, CardHeight);
+            m_Card = card;
             AddImage(card.gameObject, new Color(0.98f, 0.98f, 0.98f, 0.97f), UISprites.RoundedPanel, true, 20f);
 
             Label(card, "Settings", 36, k_Ink, -58f, FontStyle.Bold);
@@ -379,7 +384,9 @@ namespace GlassRoom
             (m_LowButtonBg, m_LowButtonText) = AddChoice(card, "Low", new Vector2(128f, -478f), () => SetGraphics(true));
             ShowGraphics(GraphicsQuality.Low);
 
-            AddHintsSwitch(card, -568f);
+            AddSwitch(card, -568f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on);
+            // Only in computer mode; the card grows to fit it.
+            m_MouseRow = AddSwitch(card, -648f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
 
             var done = NewRect("Done", card, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
             done.sizeDelta = new Vector2(500f, 84f);
@@ -466,12 +473,13 @@ namespace GlassRoom
         }
 
         // "Hints" with an on/off switch: a rounded track with a sliding knob, dark when on.
-        void AddHintsSwitch(RectTransform parent, float y)
+        // A labelled on/off switch row.
+        GameObject AddSwitch(RectTransform parent, float y, string title, System.Func<bool> get, System.Action<bool> set)
         {
-            var row = NewRect("Hints Row", parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            var row = NewRect(title + " Row", parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
             row.sizeDelta = new Vector2(500f, 56f);
             row.anchoredPosition = new Vector2(0f, y);
-            var label = AddText(row, "Hints", 26, k_Ink, FontStyle.Bold);
+            var label = AddText(row, title, 26, k_Ink, FontStyle.Bold);
             label.alignment = TextAnchor.MiddleLeft;
 
             var track = NewRect("Switch", row, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f));
@@ -493,10 +501,11 @@ namespace GlassRoom
             button.targetGraphic = trackImage;
             button.onClick.AddListener(() =>
             {
-                HintSettings.Enabled = !HintSettings.Enabled;
-                Show(HintSettings.Enabled);
+                set(!get());
+                Show(get());
             });
-            Show(HintSettings.Enabled);
+            Show(get());
+            return row.gameObject;
         }
 
         Text Label(RectTransform parent, string value, int size, Color color, float y, FontStyle style = FontStyle.Normal)

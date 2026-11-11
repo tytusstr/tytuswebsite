@@ -130,7 +130,6 @@ namespace GlassRoom.Editor
         /// <summary>Gives a scooter its recorded sounds (also used to update one already in a scene).</summary>
         public static void AssignSounds(StandUpScooter scooter)
         {
-            scooter.rollClip = LoadClip("Wheels Rolling.mp3");
             scooter.motorClip = LoadClip("Electric Hum.ogg");
             scooter.stepOnClip = LoadClip("impactSoft_medium_001.ogg");
             scooter.stepOffClip = LoadClip("impactSoft_heavy_002.ogg");

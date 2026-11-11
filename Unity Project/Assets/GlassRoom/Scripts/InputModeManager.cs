@@ -23,6 +23,7 @@ namespace GlassRoom
         public const string Sensitivity = "GlassRoom.Sensitivity";
         public const string LowGraphics = "GlassRoom.LowGraphics";
         public const string Hints = "GlassRoom.Hints";
+        public const string Mouse = "GlassRoom.Mouse";
 
         public static void SetInt(string key, int value)
         {
@@ -48,6 +49,8 @@ namespace GlassRoom
                 LookSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(Sensitivity));
             if (PlayerPrefs.HasKey(Hints))
                 HintSettings.Enabled = PlayerPrefs.GetInt(Hints) != 0;
+            if (PlayerPrefs.HasKey(Mouse))
+                MouseSettings.Enabled = PlayerPrefs.GetInt(Mouse) != 0;
         }
     }
 
@@ -139,6 +142,29 @@ namespace GlassRoom
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => s_Enabled = true;
+    }
+
+    /// <summary>
+    /// The "Mouse?" switch in computer mode: whether the player has a mouse with a right button.
+    /// Off (the default, for laptop trackpads) the hints say "Click" and N skips songs; on, they
+    /// mention left and right click. Remembered once changed.
+    /// </summary>
+    public static class MouseSettings
+    {
+        static bool s_Enabled;
+
+        public static bool Enabled
+        {
+            get => s_Enabled;
+            set
+            {
+                s_Enabled = value;
+                SavedSettings.SetInt(SavedSettings.Mouse, value ? 1 : 0);
+            }
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => s_Enabled = false;
     }
 
     /// <summary>

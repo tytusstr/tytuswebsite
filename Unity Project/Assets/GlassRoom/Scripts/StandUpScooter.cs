@@ -40,16 +40,13 @@ namespace GlassRoom
         public float wheelRadius = 0.05f;
 
         [Header("Sounds (recordings)")]
-        [Tooltip("Wheels rolling on a hard floor: the main riding sound.")]
-        public AudioClip rollClip;
-        [Tooltip("A faint electric hum under the rolling.")]
+        [Tooltip("The electric motor hum: the riding sound.")]
         public AudioClip motorClip;
-        [Range(0f, 1f)] public float rollVolume = 0.9f;
-        [Range(0f, 1f)] public float motorVolume = 0.08f;
+        [Range(0f, 1f)] public float humVolume = 0.5f;
         public AudioClip stepOnClip;
         public AudioClip stepOffClip;
 
-        AudioSource m_Roll, m_Motor, m_Effects;
+        AudioSource m_Motor, m_Effects;
 #if UNITY_WEBGL && !UNITY_EDITOR
         // In a web browser, 3D sound is recalculated every frame things move, which is heavy on
         // phones, so the scooter is heard plainly there.
@@ -63,8 +60,6 @@ namespace GlassRoom
         void Awake()
         {
             m_Effects = NewSource("Step", null, false);
-            // The rolling recording includes it starting and stopping; loop its steady middle.
-            m_Roll = NewSource("Rolling", SteadyLoop(AtFullLevel(rollClip)), true);
             m_Motor = NewSource("Motor", AtFullLevel(motorClip), true);
         }
 
@@ -89,7 +84,6 @@ namespace GlassRoom
         {
             m_Ridden = ridden;
             // The rider hears it directly, at full level; others hear it from where it stands.
-            m_Roll.spatialBlend = ridden ? 0f : Spatial;
             m_Motor.spatialBlend = ridden ? 0f : Spatial;
             m_Effects.spatialBlend = ridden ? 0f : Spatial;
             // While riding, the player's capsule does the colliding; the scooter's own colliders
@@ -120,12 +114,9 @@ namespace GlassRoom
             float t = Mathf.Clamp01(Mathf.Abs(m_Speed) / maxSpeed);
             float moving = Mathf.SmoothStep(0f, 1f, Mathf.Abs(m_Speed) / 0.3f);
             float follow = 1f - Mathf.Exp(-12f * dt);
-            // Mostly the wheels rolling, louder and a touch higher the faster it goes...
-            m_Roll.pitch = Mathf.Lerp(0.8f, 1.2f, t);
-            m_Roll.volume = Mathf.Lerp(m_Roll.volume, moving * rollVolume * Mathf.Lerp(0.35f, 1f, t), follow);
-            // ...with just a hint of the electric motor underneath, rising in pitch with speed.
+            // The electric motor, louder and higher the faster it goes.
             m_Motor.pitch = Mathf.Lerp(0.85f, 1.5f, t);
-            m_Motor.volume = Mathf.Lerp(m_Motor.volume, moving * motorVolume * Mathf.Lerp(0.6f, 1f, t), follow);
+            m_Motor.volume = Mathf.Lerp(m_Motor.volume, moving * humVolume * Mathf.Lerp(0.6f, 1f, t), follow);
         }
 
         // Brings a recording up to full level (a plain volume change, since the recordings are quiet).

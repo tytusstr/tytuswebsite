@@ -185,11 +185,22 @@ namespace GlassRoom
         void Update()
         {
             ReadInput(out Vector2 move, out Vector2 look, out bool run);
-            if (m_Ride != null)
+            if (m_Ride != null && InputModeManager.Mode == ControlMode.Touchscreen)
             {
-                // Riding: the keys or joystick steer the scooter. The mouse, or a second finger on
-                // the right side of a phone screen, turns only your head, within a range, like
-                // sitting in a boat; it never changes where the scooter goes.
+                // Riding on a phone: the joystick only drives forward and back. The finger on the
+                // right side does all the looking, up, down, left and right, and the scooter
+                // heads wherever you look.
+                m_Yaw += m_RideLookYaw + look.x;
+                m_RideLookYaw = 0f;
+                Ride(new Vector2(0f, move.y));
+                m_Pitch = Mathf.Clamp(m_Pitch - look.y, -maxPitch, maxPitch);
+                cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
+            }
+            else if (m_Ride != null)
+            {
+                // Riding on a computer: the keys steer the scooter. The mouse turns only your
+                // head, within a range, like sitting in a boat; it never changes where the
+                // scooter goes.
                 Ride(move);
                 m_RideLookYaw = Mathf.Clamp(m_RideLookYaw + look.x, -RideLookLimit, RideLookLimit);
                 m_Pitch = Mathf.Clamp(m_Pitch - look.y, -maxPitch, maxPitch);
@@ -227,6 +238,10 @@ namespace GlassRoom
                     m_Hud.ToggleMenu();
                     SetCursorLocked(!m_Hud.IsMenuOpen);
                 }
+                // N skips to the next song while looking at the speaker (same as right click).
+                if (keyboard.nKey.wasPressedThisFrame && InputModeManager.Mode == ControlMode.KeyboardMouse
+                    && !m_Hud.IsMenuOpen && InteractableAt(ScreenCentre) is MusicSpeaker skipped)
+                    skipped.Skip();
             }
 
             if (m_Hud.IsMenuOpen)
@@ -271,6 +286,9 @@ namespace GlassRoom
         }
 
         static bool Pressed(UnityEngine.InputSystem.Controls.KeyControl a, UnityEngine.InputSystem.Controls.KeyControl b) => a.isPressed || b.isPressed;
+
+        // "Left click" with a mouse, just "Click" on a trackpad (the Mouse? switch).
+        static string Click => MouseSettings.Enabled ? "Left click" : "Click";
 
         Vector2 ScreenCentre => new Vector2(Screen.width / 2f, Screen.height / 2f);
 
@@ -522,12 +540,15 @@ namespace GlassRoom
                 if (menu || !HintSettings.Enabled) m_Hud.SetKeyHints();
                 else if (target is MusicSpeaker hinted)
                 {
-                    // Skipping only works while music is playing.
-                    if (hinted.IsOn) m_Hud.SetKeyHints(("Left click", "play / pause"), ("Right click", "next song"));
-                    else m_Hud.SetKeyHints(("Left click", "play / pause"));
+                    // Skipping only works while music is playing. Without a mouse (a trackpad),
+                    // N skips instead of right click.
+                    var playPause = MouseSettings.Enabled ? ("Left click", "play / pause") : ("Left click", "pause / play");
+                    var next = MouseSettings.Enabled ? ("Right click", "next song") : ("N", "next song");
+                    if (hinted.IsOn) m_Hud.SetKeyHints(playPause, next);
+                    else m_Hud.SetKeyHints(playPause);
                 }
-                else if (m_Ride != null) m_Hud.SetKeyHints(("Left click", "to get off"));
-                else if (target is StandUpScooter) m_Hud.SetKeyHints(("Left click", "to mount"));
+                else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
+                else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
                 else if (Time.unscaledTime < m_JumpHintUntil + JumpHintFade)
                     m_Hud.SetKeyHints(1f - Mathf.Clamp01((Time.unscaledTime - m_JumpHintUntil) / JumpHintFade), ("Space", "to jump"));
                 else m_Hud.SetKeyHints();
