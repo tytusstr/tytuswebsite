@@ -25,6 +25,7 @@ mergeInto(LibraryManager.library, {
       };
       var unlock = function () {
         m.graph();
+        if (!m.wantPlay) return;
         if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
         if (m.wantPlay && m.el.paused && !m.ended) { var p = m.el.play(); if (p && p.catch) p.catch(function () {}); }
       };
@@ -33,6 +34,8 @@ mergeInto(LibraryManager.library, {
     }
     m.ended = false;
     m.wantPlay = true;
+    if (m.gain) m.gain.gain.value = m.volume;
+    if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
     m.el.src = url;
     var p = m.el.play();
     if (p && p.catch) p.catch(function () {});
@@ -42,13 +45,18 @@ mergeInto(LibraryManager.library, {
     var m = window.__webMusic;
     if (!m) return;
     m.wantPlay = false;
+    // iPhones can keep repeating the last moment of sound after a pause, so silence the
+    // output and stop the mixer too, not just the player.
+    if (m.gain) m.gain.gain.value = 0;
     m.el.pause();
+    if (m.ctx && m.ctx.state === "running" && m.ctx.suspend) m.ctx.suspend();
   },
 
   WebMusic_Resume: function () {
     var m = window.__webMusic;
     if (!m) return;
     m.wantPlay = true;
+    if (m.gain) m.gain.gain.value = m.volume;
     if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
     var p = m.el.play();
     if (p && p.catch) p.catch(function () {});
@@ -58,7 +66,7 @@ mergeInto(LibraryManager.library, {
     var m = window.__webMusic;
     if (!m) return;
     m.volume = volume;
-    if (m.gain) m.gain.gain.value = volume;
+    if (m.gain) { if (m.wantPlay) m.gain.gain.value = volume; }
     else m.el.volume = Math.max(0, Math.min(1, volume));
   },
 

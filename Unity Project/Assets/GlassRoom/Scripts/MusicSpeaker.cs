@@ -64,6 +64,7 @@ namespace GlassRoom
         // about its whole length has played, so a brief hiccup never skips to another song.
         float m_Played;
         float m_AppliedWebVolume = -1f;
+        float m_LastPress = -1f;
 
         /// <summary>True while music is playing (not paused).</summary>
         public bool IsOn => !m_Paused;
@@ -126,6 +127,7 @@ namespace GlassRoom
 
         public void TogglePlayPause()
         {
+            if (TooSoon()) return;
             if (m_Paused) Resume();
             else Pause();
         }
@@ -133,7 +135,17 @@ namespace GlassRoom
         /// <summary>Skips to a random different track. Does nothing while paused.</summary>
         public void Skip()
         {
-            if (!m_Paused) PlayTrack(PickNext());
+            if (m_Paused || TooSoon()) return;
+            PlayTrack(PickNext());
+        }
+
+        // A single tap can arrive twice on some phones; presses closer together than this are
+        // treated as one, so the music never flips between playing and paused.
+        bool TooSoon()
+        {
+            if (Time.unscaledTime - m_LastPress < 0.3f) return true;
+            m_LastPress = Time.unscaledTime;
+            return false;
         }
 
         void Resume()
