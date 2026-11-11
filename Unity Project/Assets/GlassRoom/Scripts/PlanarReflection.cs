@@ -77,6 +77,10 @@ namespace GlassRoom
             }
 
             var cam = m_ReflectionCamera;
+            // Marked as a reflection camera. Drawn as an ordinary game camera, in browsers its
+            // lights came out split into mismatched halves, putting a seam across the middle of
+            // the mirror image (the top half of the screen looked slightly darker).
+            cam.cameraType = CameraType.Reflection;
             cam.clearFlags = main.clearFlags;
             cam.backgroundColor = main.backgroundColor;
             cam.fieldOfView = main.fieldOfView;
