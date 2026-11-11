@@ -12,7 +12,49 @@ namespace GlassRoom
         Touchscreen
     }
 
-    /// <summary>The current control mode. Every game starts in computer mode.</summary>
+    /// <summary>
+    /// Remembers the menu settings (controls, look sensitivity, graphics, hints) on this device,
+    /// so they're the same the next time the game or website is opened. In a browser they're
+    /// kept in that browser's storage for this website.
+    /// </summary>
+    static class SavedSettings
+    {
+        public const string Mode = "GlassRoom.Mode";
+        public const string Sensitivity = "GlassRoom.Sensitivity";
+        public const string LowGraphics = "GlassRoom.LowGraphics";
+        public const string Hints = "GlassRoom.Hints";
+
+        public static void SetInt(string key, int value)
+        {
+            if (PlayerPrefs.HasKey(key) && PlayerPrefs.GetInt(key) == value) return;
+            PlayerPrefs.SetInt(key, value);
+            PlayerPrefs.Save();
+        }
+
+        public static void SetFloat(string key, float value)
+        {
+            if (PlayerPrefs.HasKey(key) && Mathf.Approximately(PlayerPrefs.GetFloat(key), value)) return;
+            PlayerPrefs.SetFloat(key, value);
+            PlayerPrefs.Save();
+        }
+
+        // Saved settings are put back before the scene loads (graphics: see GraphicsQuality).
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void Load()
+        {
+            if (PlayerPrefs.HasKey(Mode))
+                InputModeManager.Mode = PlayerPrefs.GetInt(Mode) == 1 ? ControlMode.Touchscreen : ControlMode.KeyboardMouse;
+            if (PlayerPrefs.HasKey(Sensitivity))
+                LookSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(Sensitivity));
+            if (PlayerPrefs.HasKey(Hints))
+                HintSettings.Enabled = PlayerPrefs.GetInt(Hints) != 0;
+        }
+    }
+
+    /// <summary>
+    /// The current control mode. The first game starts in computer mode; after that, whichever
+    /// mode was last chosen.
+    /// </summary>
     public static class InputModeManager
     {
         static ControlMode s_Mode = ControlMode.KeyboardMouse;
@@ -27,6 +69,7 @@ namespace GlassRoom
                 if (s_Mode == value)
                     return;
                 s_Mode = value;
+                SavedSettings.SetInt(SavedSettings.Mode, value == ControlMode.Touchscreen ? 1 : 0);
                 ModeChanged?.Invoke(value);
             }
         }
@@ -40,7 +83,7 @@ namespace GlassRoom
     }
 
     /// <summary>
-    /// Look sensitivity from the menu slider, which always starts in the middle. Each mode has its
+    /// Look sensitivity from the menu slider, which starts in the middle until it's moved (then it's remembered). Each mode has its
     /// own range: computer 0.2× / 1.5× (middle) / 10×, phone 0.1× / 0.5× (middle) / 3×.
     /// </summary>
     public static class LookSettings
@@ -49,7 +92,16 @@ namespace GlassRoom
         const float PhoneMin = 0.1f, PhoneMiddle = 0.5f, PhoneMax = 3f;
 
         /// <summary>Slider position from 0 to 1; 0.5 is the middle.</summary>
-        public static float SliderPosition { get; set; } = 0.5f;
+        public static float SliderPosition
+        {
+            get => s_Slider;
+            set
+            {
+                s_Slider = value;
+                SavedSettings.SetFloat(SavedSettings.Sensitivity, value);
+            }
+        }
+        static float s_Slider = 0.5f;
 
         /// <summary>The multiplier applied to mouse or touch looking in the current mode.</summary>
         public static float Sensitivity
@@ -67,22 +119,32 @@ namespace GlassRoom
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => SliderPosition = 0.5f;
+        static void ResetStatics() => s_Slider = 0.5f;
     }
 
-    /// <summary>Whether the key hints at the bottom of the screen are shown. Every game starts with them on.</summary>
+    /// <summary>Whether the key hints at the bottom of the screen are shown. On until switched off (then remembered).</summary>
     public static class HintSettings
     {
-        public static bool Enabled { get; set; } = true;
+        static bool s_Enabled = true;
+
+        public static bool Enabled
+        {
+            get => s_Enabled;
+            set
+            {
+                s_Enabled = value;
+                SavedSettings.SetInt(SavedSettings.Hints, value ? 1 : 0);
+            }
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => Enabled = true;
+        static void ResetStatics() => s_Enabled = true;
     }
 
     /// <summary>
     /// Graphics: Full (sharp, every effect) or Low (for phones or anything that lags). Low uses the
     /// project's Mobile quality level (half resolution, no shadows), turns off the mirror floor
-    /// and the glow around lights. Every game starts on Full; the menu switches it any time.
+    /// and the glow around lights. The first game starts on Full; after that, whichever was last chosen.
     /// </summary>
     public static class GraphicsQuality
     {
@@ -95,7 +157,7 @@ namespace GlassRoom
         {
             get
             {
-                if (!s_Applied) Set(false);
+                if (!s_Applied) Set(SavedLow);
                 return s_Low;
             }
             set => Set(value);
@@ -106,6 +168,7 @@ namespace GlassRoom
             bool changed = s_Low != low || !s_Applied;
             s_Low = low;
             s_Applied = true;
+            if (changed) SavedSettings.SetInt(SavedSettings.LowGraphics, low ? 1 : 0);
             int level = LevelNamed(low ? "Mobile" : "PC");
             if (level >= 0 && QualitySettings.GetQualityLevel() != level)
                 QualitySettings.SetQualityLevel(level, true);
@@ -121,6 +184,9 @@ namespace GlassRoom
                 if (volume.HasInstantiatedProfile() || volume.sharedProfile != null)
                     if (volume.profile.TryGet<Bloom>(out var bloom)) bloom.active = !s_Low;
         }
+
+        // Full unless Low was chosen last time.
+        static bool SavedLow => PlayerPrefs.GetInt(SavedSettings.LowGraphics, 0) != 0;
 
         static int LevelNamed(string name)
         {
@@ -143,7 +209,7 @@ namespace GlassRoom
             // In the editor, put back the quality level it had once Play stops.
             int original = QualitySettings.GetQualityLevel();
             Application.quitting += () => QualitySettings.SetQualityLevel(original, true);
-            Set(false);
+            Set(SavedLow);
             SceneManager.sceneLoaded += (_, _) => ApplyToScene();
         }
     }
