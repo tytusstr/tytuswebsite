@@ -61,6 +61,9 @@ namespace GlassRoom
         int m_LastClip = -1;
         bool m_LeftFoot;
         bool m_JumpPressed;
+        // Holding Space jumps again only after standing on the ground this long.
+        const float HeldJumpPause = 0.1f;
+        float m_GroundedTime;
         // The "Space to jump" hint: waits until the menu is closed, then shows for a few seconds.
         bool m_JumpHintPending;
         // Seconds of smooth play the jump hint has been on screen. Counted only while the menu
@@ -234,12 +237,12 @@ namespace GlassRoom
                     StepOff();
                 if (keyboard.escapeKey.wasPressedThisFrame)
                     SetCursorLocked(false);
-                // Q opens and closes the menu on a computer: the mouse is freed to use it, and
-                // captured again for looking when it closes.
+                // Q opens and closes the menu on a computer. The mouse stays captured: the menu
+                // gets the game's own pointer (FakeCursor), so there's no clicking back in after.
                 if (keyboard.qKey.wasPressedThisFrame && InputModeManager.Mode == ControlMode.KeyboardMouse)
                 {
                     m_Hud.ToggleMenu();
-                    SetCursorLocked(!m_Hud.IsMenuOpen);
+                    if (!m_Hud.IsMenuOpen) SetCursorLocked(true);
                 }
                 // N skips to the next song while looking at the speaker (same as right click).
                 if (keyboard.nKey.wasPressedThisFrame && InputModeManager.Mode == ControlMode.KeyboardMouse
@@ -267,8 +270,9 @@ namespace GlassRoom
                 move.y = (Pressed(keyboard.wKey, keyboard.upArrowKey) ? 1f : 0f) - (Pressed(keyboard.sKey, keyboard.downArrowKey) ? 1f : 0f);
                 move = Vector2.ClampMagnitude(move, 1f);
                 run = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
-                // Holding Space keeps jumping: a new jump starts each time you land.
-                m_JumpPressed = keyboard.spaceKey.isPressed;
+                // Holding Space keeps jumping: a new jump starts a moment after each landing.
+                m_JumpPressed = keyboard.spaceKey.wasPressedThisFrame
+                    || (keyboard.spaceKey.isPressed && m_GroundedTime >= HeldJumpPause);
             }
 
             var mouse = Mouse.current;
@@ -314,7 +318,8 @@ namespace GlassRoom
             horizontal = Vector3.Lerp(horizontal, target, 1f - Mathf.Exp(-acceleration * dt));
 
             float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
-            if (m_JumpPressed && m_Controller.isGrounded) vertical = jumpSpeed;
+            m_GroundedTime = m_Controller.isGrounded ? m_GroundedTime + dt : 0f;
+            if (m_JumpPressed && m_Controller.isGrounded) { vertical = jumpSpeed; m_GroundedTime = 0f; }
             m_Velocity = new Vector3(horizontal.x, vertical, horizontal.z);
             m_Controller.Move(m_Velocity * dt);
 

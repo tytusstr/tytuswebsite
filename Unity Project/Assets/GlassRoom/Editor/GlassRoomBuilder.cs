@@ -86,7 +86,14 @@ namespace GlassRoom.Editor
             else if (nook != null) GlassRoomProps.AddSpeaker(nook, new Vector3(Width / 2f, 0f, -Length / 2f));
 
             var scooter = Object.FindAnyObjectByType<StandUpScooter>();
-            if (scooter != null) { StandUpScooterBuilder.AssignSounds(scooter); StandUpScooterBuilder.AssignColliders(scooter); }
+            if (scooter != null)
+            {
+                StandUpScooterBuilder.AssignSounds(scooter);
+                StandUpScooterBuilder.AssignColliders(scooter);
+                // The saved scene keeps its old value otherwise.
+                scooter.humVolume = 0.25f;
+                EditorUtility.SetDirty(scooter);
+            }
             else StandUpScooterBuilder.Build(hall.transform, k_ScooterPosition, ScooterYaw);
 
             // Scene objects keep the values they were saved with, so pass on the new defaults.
@@ -609,30 +616,34 @@ namespace GlassRoom.Editor
 
         // ---------- Reflections ----------
 
-        static readonly float[] k_ProbeZ = { -25.3f, 0f, 25.3f };
-
         static void BuildReflections()
         {
             var parent = new GameObject("Reflection Probes").transform;
-            float top = Height + SkylightRise + 0.5f;
-            foreach (float z in k_ProbeZ)
-            {
-                var go = new GameObject($"Reflection Probe {z}");
-                go.transform.SetParent(parent, false);
-                go.transform.position = new Vector3(0f, 1.6f, z);
-                var probe = go.AddComponent<ReflectionProbe>();
-                probe.mode = ReflectionProbeMode.Custom;
-                probe.boxProjection = true;
-                probe.size = new Vector3(Width, top + 0.2f, Length / 3f + 4f);
-                probe.center = new Vector3(0f, top / 2f - 1.6f, 0f);
-                probe.blendDistance = 2f;
-                probe.resolution = 1024;
-                probe.hdr = true;
-                probe.nearClipPlane = 0.05f;
-                probe.farClipPlane = 120f;
-                probe.clearFlags = ReflectionProbeClearFlags.Skybox;
-            }
+            var go = new GameObject("Reflection Probe 0");
+            go.transform.SetParent(parent, false);
+            var probe = go.AddComponent<ReflectionProbe>();
+            probe.mode = ReflectionProbeMode.Custom;
+            probe.hdr = true;
+            probe.nearClipPlane = 0.05f;
+            probe.farClipPlane = 120f;
+            probe.clearFlags = ReflectionProbeClearFlags.Skybox;
+            FitHallProbe(probe);
             BuildSkylightProbe(parent);
+        }
+
+        // One capture for the whole hall, its box exactly the room's inside. Box projection then
+        // places every reflection where it belongs on the walls and ceiling. (Captures covering
+        // only part of the hall each treated their own box ends as walls, so the reflections on
+        // the long walls were projected onto pretend walls halfway down the hall.)
+        static void FitHallProbe(ReflectionProbe probe)
+        {
+            float top = Height + SkylightRise + 0.5f;
+            probe.transform.position = new Vector3(0f, 1.6f, 0f);
+            probe.boxProjection = true;
+            probe.size = new Vector3(Width, top + 0.2f, Length);
+            probe.center = new Vector3(0f, top / 2f - 1.6f, 0f);
+            probe.blendDistance = 0f;
+            probe.resolution = 1024;
         }
 
         internal const string SkylightProbeName = "Skylight Curve Probe";
@@ -664,9 +675,7 @@ namespace GlassRoom.Editor
 
         /// <summary>
         /// Re-captures the hall's reflections into the walls and ceiling, including the plants,
-        /// seating and lamp, then saves the scene. Captures are 512 px: in Full graphics all
-        /// reflection captures share one texture of fixed size, and at 1024 px they didn't all
-        /// fit, so some walls showed no reflection at all.
+        /// seating and lamp, then saves the scene.
         /// </summary>
         [MenuItem("Tools/Glass Room/Bake Reflections")]
         public static void BakeAllReflections()
@@ -686,12 +695,16 @@ namespace GlassRoom.Editor
                     var flags = GameObjectUtility.GetStaticEditorFlags(r.gameObject);
                     GameObjectUtility.SetStaticEditorFlags(r.gameObject, flags | StaticEditorFlags.ReflectionProbeStatic);
                 }
-            foreach (var probe in Object.FindObjectsByType<ReflectionProbe>(FindObjectsSortMode.None))
-                if (probe.resolution > 512)
-                {
-                    probe.resolution = 512;
-                    EditorUtility.SetDirty(probe);
-                }
+            // One capture for the whole hall (see FitHallProbe); the old part-hall ones are
+            // switched off. The skylight's own small capture stays.
+            foreach (var probe in Object.FindObjectsByType<ReflectionProbe>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (probe.name == SkylightProbeName) continue;
+                if (probe.name == "Reflection Probe 0") { probe.gameObject.SetActive(true); FitHallProbe(probe); }
+                else probe.gameObject.SetActive(false);
+                EditorUtility.SetDirty(probe);
+                EditorUtility.SetDirty(probe.gameObject);
+            }
             BakeReflections();
             // Captures from before the probes saved under Reflections/ are no longer used.
             for (int i = 0; i < 3; i++)

@@ -67,6 +67,7 @@ namespace GlassRoom
         float m_SmoothedFrameTime = 1f / 60f;
         Font m_Font;
         GraphicRaycaster m_Raycaster;
+        FakeCursor m_FakeCursor;
         readonly List<RaycastResult> m_Hits = new List<RaycastResult>();
 
         public static ControlsHUD Create()
@@ -92,6 +93,9 @@ namespace GlassRoom
             // The game is running: the website's loading cover can go.
             WebPage.Ready();
             m_SmoothedFrameTime = Mathf.Lerp(m_SmoothedFrameTime, Time.unscaledDeltaTime, 0.05f);
+            // Menu open while the real mouse is captured for looking: the game's own pointer.
+            m_FakeCursor.Tick(IsMenuOpen && Cursor.lockState == CursorLockMode.Locked
+                && InputModeManager.Mode == ControlMode.KeyboardMouse);
             if (IsMenuOpen)
                 m_FrameRate.text = Mathf.RoundToInt(1f / m_SmoothedFrameTime) + " fps";
             FitSafeArea();
@@ -329,6 +333,8 @@ namespace GlassRoom
             m_Menu.SetActive(false);
 
             BuildMenuButton(root);
+            m_FakeCursor = gameObject.AddComponent<FakeCursor>();
+            m_FakeCursor.Build(canvasRect);
         }
 
         // Dark round button with three white lines, so it stands out against the white room.
@@ -385,7 +391,7 @@ namespace GlassRoom
             // Computer mode only: right under the Controls choice; the rest moves down for it.
             m_MouseRow = AddSwitch(card, -258f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
             // Computer mode only: a small reminder in the top-left corner.
-            var qNote = Label(card, "Press Q to open settings", 20, k_Muted, -36f);
+            var qNote = Label(card, "Press Q to open or close settings", 20, k_Muted, -36f);
             qNote.alignment = TextAnchor.UpperLeft;
             qNote.rectTransform.offsetMin = new Vector2(28f, qNote.rectTransform.offsetMin.y);
             m_QNote = qNote.gameObject;

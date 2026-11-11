@@ -100,7 +100,7 @@ namespace GlassRoom.Editor
 
         const string MusicFolder = "Assets/GlassRoom/Audio/Music";
         // The track the speaker always opens with (matched by name in the Music folder).
-        const string OpeningTrack = "Never Gonna Give You Up";
+        const string OpeningTrack = "atmospheric-piano";
 
         /// <summary>
         /// Gives the speaker every track in the Music folder: the opening track first, the rest
