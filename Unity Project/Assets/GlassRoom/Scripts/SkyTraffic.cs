@@ -60,7 +60,8 @@ namespace GlassRoom
 
         static readonly int k_EmissionId = Shader.PropertyToID("_EmissionColor");
         MaterialPropertyBlock m_Block;
-        Mesh m_Ring;
+        Mesh m_Seam, m_Cylinder;
+        Material m_Pipe, m_SeamMaterial;
 
         readonly List<List<Train>> m_Lanes = new List<List<Train>>();
         Mesh m_Capsule, m_Cube, m_Sphere;
@@ -70,8 +71,20 @@ namespace GlassRoom
             m_Capsule = PrimitiveMesh(PrimitiveType.Capsule);
             m_Cube = PrimitiveMesh(PrimitiveType.Cube);
             m_Sphere = PrimitiveMesh(PrimitiveType.Sphere);
-            m_Ring = TorusMesh(CarDiameter * 0.5f + 0.015f, 0.075f, 48, 10);
+            m_Seam = TorusMesh(CarDiameter * 0.5f + 0.004f, 0.03f, 64, 6);
+            m_Cylinder = PrimitiveMesh(PrimitiveType.Cylinder);
             m_Block = new MaterialPropertyBlock();
+            // Polished steel for the pipes and near-black for the panel seams, made from the
+            // body's own material so they share its look.
+            m_Pipe = new Material(bodyMaterial) { name = "Train Pipe" };
+            m_Pipe.SetColor("_BaseColor", new Color(0.62f, 0.64f, 0.68f));
+            m_Pipe.SetFloat("_Metallic", 1f);
+            m_Pipe.SetFloat("_Smoothness", 0.88f);
+            m_Pipe.SetColor("_EmissionColor", Color.black);
+            m_SeamMaterial = new Material(bodyMaterial) { name = "Train Seam" };
+            m_SeamMaterial.SetColor("_BaseColor", new Color(0.03f, 0.03f, 0.035f));
+            m_SeamMaterial.SetFloat("_Smoothness", 0.4f);
+            m_SeamMaterial.SetColor("_EmissionColor", Color.black);
 
             foreach (var lane in lanes)
             {
@@ -207,18 +220,32 @@ namespace GlassRoom
                 car.localPosition = new Vector3(-(i + 0.5f) * (CarLength + CarGap), 0f, 0f);
                 t.cars[i] = car;
 
-                // A sleek capsule lying along X, the same all the way round, so it looks right
-                // from every side as it rolls.
+                // Brushed graphite hull lying along X, rounded at both ends.
                 Part("Body", car, m_Capsule, bodyMaterial, Vector3.zero, new Vector3(CarDiameter, CarLength / 2f, CarDiameter), new Vector3(0f, 0f, 90f));
-                // Thin glowing rings around the body: near each end and in the middle.
-                var rings = new List<Renderer>();
-                foreach (float along in new[] { -0.36f, 0f, 0.36f })
+                float straight = CarLength - CarDiameter;
+                // Panel seams: thin dark lines around the hull, dividing it into plates.
+                foreach (float along in new[] { -0.42f, -0.14f, 0.14f, 0.42f })
+                    Part("Seam", car, m_Seam, m_SeamMaterial, new Vector3(along * straight, 0f, 0f), Vector3.one);
+                // Six steel pipes along the hull, evenly around it, and three light strips set
+                // between them: as the car rolls you see them turn.
+                var lights = new List<Renderer>();
+                for (int k = 0; k < 6; k++)
                 {
-                    var ring = Part("Ring", car, m_Ring, stripMaterials[0], new Vector3(along * (CarLength - CarDiameter), 0f, 0f), Vector3.one).GetComponent<Renderer>();
-                    rings.Add(ring);
-                    strips.Add(ring);
+                    float a = k * 60f * Mathf.Deg2Rad;
+                    float pipeRadius = CarDiameter * 0.5f + 0.09f;
+                    var at = new Vector3(0f, Mathf.Cos(a), Mathf.Sin(a));
+                    Part("Pipe", car, m_Cylinder, m_Pipe, at * pipeRadius, new Vector3(0.2f, straight * 0.47f, 0.2f), new Vector3(0f, 0f, 90f));
+                    if (k % 2 == 0)
+                    {
+                        float b = a + 30f * Mathf.Deg2Rad;
+                        var stripAt = new Vector3(0f, Mathf.Cos(b), Mathf.Sin(b)) * (CarDiameter * 0.5f + 0.01f);
+                        var strip = Part("Light Strip", car, m_Cube, stripMaterials[0], stripAt,
+                            new Vector3(straight * 0.8f, 0.05f, 0.24f), new Vector3(b * Mathf.Rad2Deg, 0f, 0f)).GetComponent<Renderer>();
+                        lights.Add(strip);
+                        strips.Add(strip);
+                    }
                 }
-                t.carRings[i] = rings.ToArray();
+                t.carRings[i] = lights.ToArray();
             }
             t.strips = strips.ToArray();
 

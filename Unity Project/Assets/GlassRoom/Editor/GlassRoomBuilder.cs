@@ -113,10 +113,59 @@ namespace GlassRoom.Editor
             }
 
             MakeMirrorWalls(hall.transform);
+            FixFloorJoins(hall.transform);
+            var ring = hall.transform.Find("Ring Light");
+            if (ring != null)
+            {
+                var rp = ring.localPosition;
+                ring.localPosition = new Vector3(rp.x, Height - RingBelowCeiling, rp.z);
+                EditorUtility.SetDirty(ring);
+                // The ring is a light source: it glows on its own and isn't lit by the lights
+                // around it. Lit, the spotlights a centimetre away gave it values so extreme
+                // that browsers dropped pieces of it, which looked like blocks and dashes.
+                // Kept out of static batching (merging of non-moving objects at startup), which
+                // left pieces of the ring missing while the game runs.
+                var ringFlags = GameObjectUtility.GetStaticEditorFlags(ring.gameObject);
+                GameObjectUtility.SetStaticEditorFlags(ring.gameObject, ringFlags & ~StaticEditorFlags.BatchingStatic);
+                // A round glowing tube instead of a flat ribbon: seen nearly edge-on from across
+                // the hall the ribbon was thinner than a pixel and broke into dashes.
+                var ringFilter = ring.GetComponent<MeshFilter>();
+                if (ringFilter != null) ringFilter.sharedMesh = Save(RingTube());
+                var ringRenderer = ring.GetComponent<Renderer>();
+                var glowMat = ringRenderer.sharedMaterial;
+                if (glowMat != null && glowMat.shader.name != "Universal Render Pipeline/Unlit")
+                {
+                    Color glow = glowMat.GetColor("_EmissionColor");
+                    glowMat.shader = Shader.Find("Universal Render Pipeline/Unlit");
+                    glowMat.SetColor("_BaseColor", glow);
+                    EditorUtility.SetDirty(glowMat);
+                }
+            }
+            SharpenDepth();
+            // Edge smoothing: thin bright shapes like the ring light looked stair-stepped from
+            // a distance without it.
+            if (player != null)
+            {
+                var cam = player.GetComponentInChildren<Camera>();
+                if (cam != null)
+                {
+                    // Not too close: a tiny near distance spends most of the depth precision on
+                    // the first centimetres, leaving too little to tell surfaces apart across
+                    // the hall (the ring light and wall bottoms broke up where they fought).
+                    cam.nearClipPlane = NearClip;
+                    EditorUtility.SetDirty(cam);
+                    var data = cam.GetUniversalAdditionalCameraData();
+                    data.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
+                    data.antialiasingQuality = AntialiasingQuality.High;
+                    EditorUtility.SetDirty(data);
+                }
+            }
             TuneLighting();
             GlassRoomProps.MakeSeats(hall.transform);
             if (player != null) GlassRoomProps.AddPlantRustle(player.gameObject);
-            // Far corner: diagonally opposite the cozy corner.
+            // Far corner: diagonally opposite the cozy corner. Rebuilt each time (it's generated).
+            var oldScene = hall.transform.Find("Crime Scene");
+            if (oldScene != null) Object.DestroyImmediate(oldScene.gameObject);
             GlassRoomProps.AddCrimeScene(hall.transform, new Vector3(-Width / 2f + 3.2f, 0f, Length / 2f - 3.6f));
             if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
 
@@ -151,6 +200,52 @@ namespace GlassRoom.Editor
                 var flags = GameObjectUtility.GetStaticEditorFlags(wall.gameObject);
                 GameObjectUtility.SetStaticEditorFlags(wall.gameObject, flags & ~StaticEditorFlags.BatchingStatic);
                 EditorUtility.SetDirty(wall.gameObject);
+            }
+        }
+
+        const float NearClip = 0.08f;
+
+        // The browser's default depth buffer is too coarse to tell apart surfaces a few
+        // centimetres apart across the hall, so ask every renderer for a 32-bit one.
+        static void SharpenDepth()
+        {
+            foreach (string guid in AssetDatabase.FindAssets("t:UniversalRendererData"))
+            {
+                var data = AssetDatabase.LoadAssetAtPath<UniversalRendererData>(AssetDatabase.GUIDToAssetPath(guid));
+                if (data == null) continue;
+                data.depthAttachmentFormat = DepthFormat.Depth_32_Stencil_8;
+                EditorUtility.SetDirty(data);
+            }
+            AssetDatabase.SaveAssets();
+        }
+
+        const float WallThickness = 0.2f;
+        const float WallBelowFloor = 0.2f;
+
+        // The floor used to stop exactly where the walls began, and the walls stood exactly on
+        // the floor's surface: edges in the same place fight over which one shows (like the
+        // scooter grips did), leaving glitchy lines and hairline gaps along the bottom of the
+        // walls. Now the floor runs on under the walls and the walls reach a little below the
+        // floor, so they simply meet.
+        static void FixFloorJoins(Transform hall)
+        {
+            var floor = hall.Find("Floor");
+            if (floor != null)
+            {
+                floor.localScale = new Vector3(Width + 2f * WallThickness, floor.localScale.y, Length + 2f * WallThickness);
+                EditorUtility.SetDirty(floor);
+            }
+            var walls = hall.Find("Walls");
+            if (walls == null) return;
+            float top = Height + SkylightRise;
+            foreach (Transform wall in walls)
+            {
+                if (!wall.name.EndsWith(" Wall")) continue;
+                var p = wall.localPosition;
+                var s = wall.localScale;
+                wall.localScale = new Vector3(s.x, top + WallBelowFloor, s.z);
+                wall.localPosition = new Vector3(p.x, (top - WallBelowFloor) / 2f, p.z);
+                EditorUtility.SetDirty(wall);
             }
         }
 
@@ -193,6 +288,10 @@ namespace GlassRoom.Editor
                 {
                     l.range = RingLightRange;
                     l.intensity = RingLightIntensity;
+                    // Hung clear of the ring itself (see the ring above).
+                    var lp = l.transform.position;
+                    l.transform.position = new Vector3(lp.x, Height - 0.12f, lp.z);
+                    EditorUtility.SetDirty(l.transform);
                 }
                 else continue;
                 EditorUtility.SetDirty(l);
@@ -389,7 +488,8 @@ namespace GlassRoom.Editor
             floor.name = "Floor";
             floor.transform.SetParent(hall, false);
             floor.transform.localPosition = new Vector3(0f, -0.05f, 0f);
-            floor.transform.localScale = new Vector3(Width, 0.1f, Length);
+            // Runs under the walls (see FixFloorJoins), so floor and wall meet cleanly.
+            floor.transform.localScale = new Vector3(Width + 2f * WallThickness, 0.1f, Length + 2f * WallThickness);
             floor.GetComponent<MeshRenderer>().sharedMaterial = mat;
             GameObjectUtility.SetStaticEditorFlags(floor, StaticEditorFlags.ContributeGI | StaticEditorFlags.ReflectionProbeStatic | StaticEditorFlags.BatchingStatic);
             // On its own layer so the reflection camera can leave the floor out.
@@ -521,6 +621,56 @@ namespace GlassRoom.Editor
             return go;
         }
 
+        // The tube's centre, 10 cm under the ceiling, so the 7 cm tube hangs just clear of it.
+        const float RingBelowCeiling = 0.1f;
+
+        // The ring light as a tube (a torus around the vertical axis): the same radius as before,
+        // 7 cm thick, so it looks solid from any angle.
+        static Mesh RingTube()
+        {
+            const int segments = 256, sides = 16;
+            const float tube = 0.07f;
+            var vertices = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var triangles = new List<int>();
+            for (int i = 0; i <= segments; i++)
+            {
+                float a = i / (float)segments * Mathf.PI * 2f;
+                var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                for (int j = 0; j <= sides; j++)
+                {
+                    float b = j / (float)sides * Mathf.PI * 2f;
+                    Vector3 n = dir * Mathf.Cos(b) + Vector3.up * Mathf.Sin(b);
+                    vertices.Add(dir * RingRadius + n * tube);
+                    normals.Add(n);
+                    uvs.Add(new Vector2(i / (float)segments, j / (float)sides));
+                }
+            }
+            int row = sides + 1;
+            for (int i = 0; i < segments; i++)
+            for (int j = 0; j < sides; j++)
+            {
+                int v = i * row + j;
+                triangles.AddRange(new[] { v, v + row, v + 1, v + 1, v + row, v + row + 1 });
+            }
+            var mesh = new Mesh { name = "Ring Light", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            mesh.SetVertices(vertices);
+            mesh.SetNormals(normals);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateBounds();
+            // Faces must point outward; flip if this winding points in.
+            var tris = mesh.triangles;
+            Vector3 p0 = vertices[tris[0]], p1 = vertices[tris[1]], p2 = vertices[tris[2]];
+            if (Vector3.Dot(Vector3.Cross(p1 - p0, p2 - p0), normals[tris[0]]) < 0f)
+            {
+                for (int t = 0; t < tris.Length; t += 3) (tris[t + 1], tris[t + 2]) = (tris[t + 2], tris[t + 1]);
+                mesh.triangles = tris;
+            }
+            return mesh;
+        }
+
         static void BuildRing(Transform hall, Material mat)
         {
             const int segments = 256;
@@ -542,7 +692,7 @@ namespace GlassRoom.Editor
             mesh.SetTriangles(triangles, 0);
             Face(mesh, 0, Vector3.down);
             var go = MeshObject("Ring Light", hall, Save(mesh), mat, castShadows: false);
-            go.transform.localPosition = new Vector3(k_RingCentre.x, Height - 0.003f, k_RingCentre.y);
+            go.transform.localPosition = new Vector3(k_RingCentre.x, Height - RingBelowCeiling, k_RingCentre.y);
         }
 
         // Sweeps an (inset, height) profile along an open path.
@@ -890,7 +1040,7 @@ namespace GlassRoom.Editor
             camGo.transform.localPosition = new Vector3(0f, 1.65f, 0f);
             var cam = camGo.AddComponent<Camera>();
             cam.fieldOfView = 68f;
-            cam.nearClipPlane = 0.03f;
+            cam.nearClipPlane = NearClip;
             cam.farClipPlane = 200f;
             cam.clearFlags = CameraClearFlags.Skybox;
             cam.allowHDR = true;

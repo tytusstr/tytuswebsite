@@ -359,19 +359,50 @@ namespace GlassRoom.Editor
             MeshPart("Blood Drip 3", root, BloodMesh("Blood Drip 3", 0.12f, 33, 0.3f), blood, new Vector3(-0.9f, 0.003f, 1.05f), 80f);
             MeshPart("Blood Smear", root, BloodMesh("Blood Smear", 0.22f, 51, 0.45f), blood, new Vector3(0.75f, 0.003f, -0.2f), 20f, new Vector3(1.8f, 1f, 0.5f));
 
-            // The figure, lying face down along the corner's +Z, head toward the pool's centre.
-            Limb(PrimitiveType.Capsule, "Torso", root, hoodie, new Vector3(0f, 0.125f, 0.12f), new Vector3(0.4f, 0.33f, 0.25f), new Vector3(90f, 0f, 0f));
-            Limb(PrimitiveType.Sphere, "Head", root, skin, new Vector3(0.06f, 0.11f, 0.64f), new Vector3(0.2f, 0.22f, 0.24f), new Vector3(0f, 25f, 0f));
-            Limb(PrimitiveType.Sphere, "Hair", root, hair, new Vector3(0.06f, 0.15f, 0.66f), new Vector3(0.21f, 0.17f, 0.22f), new Vector3(0f, 25f, 0f));
-            Limb(PrimitiveType.Capsule, "Leg L", root, jeans, new Vector3(-0.13f, 0.08f, -0.6f), new Vector3(0.16f, 0.46f, 0.15f), new Vector3(90f, -6f, 0f));
-            Limb(PrimitiveType.Capsule, "Leg R", root, jeans, new Vector3(0.16f, 0.08f, -0.62f), new Vector3(0.16f, 0.46f, 0.15f), new Vector3(90f, 9f, 0f));
-            Limb(PrimitiveType.Cube, "Shoe L", root, shoes, new Vector3(-0.19f, 0.06f, -1.1f), new Vector3(0.11f, 0.1f, 0.27f), new Vector3(0f, -6f, 0f));
-            Limb(PrimitiveType.Cube, "Shoe R", root, shoes, new Vector3(0.24f, 0.06f, -1.13f), new Vector3(0.11f, 0.1f, 0.27f), new Vector3(0f, 9f, 0f));
-            // One arm flung out past the head, the other bent by the side.
-            Limb(PrimitiveType.Capsule, "Arm R", root, hoodie, new Vector3(0.34f, 0.065f, 0.62f), new Vector3(0.11f, 0.33f, 0.11f), new Vector3(90f, -28f, 0f));
-            Limb(PrimitiveType.Sphere, "Hand R", root, skin, new Vector3(0.5f, 0.045f, 0.93f), new Vector3(0.09f, 0.05f, 0.12f), new Vector3(0f, -28f, 0f));
-            Limb(PrimitiveType.Capsule, "Arm L", root, hoodie, new Vector3(-0.3f, 0.065f, 0.0f), new Vector3(0.11f, 0.3f, 0.11f), new Vector3(90f, 18f, 0f));
-            Limb(PrimitiveType.Sphere, "Hand L", root, skin, new Vector3(-0.38f, 0.045f, -0.28f), new Vector3(0.09f, 0.05f, 0.12f), new Vector3(0f, 18f, 0f));
+            // The figure: "Mannequiny", a free jointed mannequin (see Models/Mannequin/Sources.txt),
+            // lying face down with its arms flung out, head at the pool.
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/GlassRoom/Models/Mannequin/Mannequin.obj");
+            if (model != null)
+            {
+                var body = (GameObject)PrefabUtility.InstantiatePrefab(model);
+                body.name = "Body";
+                body.transform.SetParent(root, false);
+                // Standing up the model faces +Z; tipped forward it lies face down, head toward +Z.
+                body.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                body.transform.localPosition = new Vector3(0.05f, 0.2f, -1.2f);
+                var shell = SimpleMaterial("Mannequin Shell", new Color(0.7f, 0.68f, 0.66f), 0.4f, 0f);
+                var dark = SimpleMaterial("Mannequin Dark", new Color(0.05f, 0.05f, 0.055f), 0.5f, 0f);
+                var joints = SimpleMaterial("Mannequin Joints", new Color(0.88f, 0.88f, 0.87f), 0.35f, 0f);
+                foreach (var r in body.GetComponentsInChildren<Renderer>())
+                {
+                    // The model's materials, in order: body, black details, white joints.
+                    var mats = r.sharedMaterials;
+                    for (int m = 0; m < mats.Length; m++)
+                    {
+                        string n = mats[m] != null ? mats[m].name : "";
+                        mats[m] = n.Contains("Negro") ? dark : n.Contains("Blanco") ? joints : shell;
+                    }
+                    r.sharedMaterials = mats;
+                    r.shadowCastingMode = ShadowCastingMode.Off;
+                }
+            }
+
+            // Written in blood beside the body: "dw its / just ketchup" (Textures/Blood Text.png),
+            // facing the hall so it reads the right way up as you walk over.
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/GlassRoom/Textures/Blood Text.png");
+            if (tex != null)
+            {
+                var writing = SimpleMaterial("Blood Writing", Color.white, 0.9f, 0f);
+                writing.SetTexture("_BaseMap", tex);
+                writing.SetFloat("_AlphaClip", 1f);
+                writing.SetFloat("_Cutoff", 0.5f);
+                writing.EnableKeyword("_ALPHATEST_ON");
+                writing.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
+                var quad = Primitive(PrimitiveType.Quad, "Blood Writing", root, writing);
+                quad.transform.localPosition = new Vector3(1.9f, 0.004f, -0.2f);
+                quad.transform.localRotation = Quaternion.Euler(90f, -90f, 0f);
+                quad.transform.localScale = new Vector3(2.6f, 1.3f, 1f);
+            }
         }
 
         static void Limb(PrimitiveType type, string name, Transform root, Material mat, Vector3 position, Vector3 scale, Vector3 euler)

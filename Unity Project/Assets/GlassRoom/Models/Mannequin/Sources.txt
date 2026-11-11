@@ -1,0 +1,1 @@
+Mannequin.obj: "Mannequiny" (Open 3D Mannequin) by GDQuest, opengameart.org/content/mannequiny-the-open-3d-mannequin, CC-BY 4.0 (creativecommons.org/licenses/by/4.0). Converted from GLB to OBJ (bind pose, no animation).
