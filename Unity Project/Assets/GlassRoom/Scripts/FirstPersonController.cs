@@ -520,7 +520,12 @@ namespace GlassRoom
                 m_Hud.SetCrosshair(!menu, target != null);
                 m_Hud.SetContextButtons();
                 if (menu || !HintSettings.Enabled) m_Hud.SetKeyHints();
-                else if (target is MusicSpeaker) m_Hud.SetKeyHints(("Left click", "play / pause"), ("Right click", "next song"));
+                else if (target is MusicSpeaker hinted)
+                {
+                    // Skipping only works while music is playing.
+                    if (hinted.IsOn) m_Hud.SetKeyHints(("Left click", "play / pause"), ("Right click", "next song"));
+                    else m_Hud.SetKeyHints(("Left click", "play / pause"));
+                }
                 else if (m_Ride != null) m_Hud.SetKeyHints(("Left click", "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints(("Left click", "to mount"));
                 else if (Time.unscaledTime < m_JumpHintUntil + JumpHintFade)
@@ -540,7 +545,10 @@ namespace GlassRoom
             if (near is StandUpScooter scooter)
                 m_Hud.SetContextButtons(("Mount", () => StepOn(scooter)));
             else if (near is MusicSpeaker speaker)
-                m_Hud.SetContextButtons(("Play / Pause", speaker.TogglePlayPause), ("Skip", speaker.Skip));
+            {
+                if (speaker.IsOn) m_Hud.SetContextButtons(("Play / Pause", speaker.TogglePlayPause), ("Skip", speaker.Skip));
+                else m_Hud.SetContextButtons(("Play / Pause", speaker.TogglePlayPause));
+            }
             else
                 m_Hud.SetContextButtons();
         }

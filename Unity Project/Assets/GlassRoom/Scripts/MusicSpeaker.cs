@@ -130,8 +130,11 @@ namespace GlassRoom
             else Pause();
         }
 
-        /// <summary>Skips to a random different track, and starts playing if paused.</summary>
-        public void Skip() => PlayTrack(PickNext());
+        /// <summary>Skips to a random different track. Does nothing while paused.</summary>
+        public void Skip()
+        {
+            if (!m_Paused) PlayTrack(PickNext());
+        }
 
         void Resume()
         {

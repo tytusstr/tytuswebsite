@@ -41,11 +41,11 @@ namespace GlassRoom
 
     /// <summary>
     /// Look sensitivity from the menu slider, which always starts in the middle. Each mode has its
-    /// own range: computer 0.2× / 2.5× (middle) / 10×, phone 0.1× / 0.5× (middle) / 3×.
+    /// own range: computer 0.2× / 1.5× (middle) / 10×, phone 0.1× / 0.5× (middle) / 3×.
     /// </summary>
     public static class LookSettings
     {
-        const float ComputerMin = 0.2f, ComputerMiddle = 2.5f, ComputerMax = 10f;
+        const float ComputerMin = 0.2f, ComputerMiddle = 1.5f, ComputerMax = 10f;
         const float PhoneMin = 0.1f, PhoneMiddle = 0.5f, PhoneMax = 3f;
 
         /// <summary>Slider position from 0 to 1; 0.5 is the middle.</summary>
@@ -82,7 +82,7 @@ namespace GlassRoom
     /// <summary>
     /// Graphics: Full (sharp, every effect) or Low (for phones or anything that lags). Low uses the
     /// project's Mobile quality level (half resolution, no shadows), turns off the mirror floor
-    /// and the glow around lights. Phones start on Low and computers on Full; the menu switches it any time.
+    /// and the glow around lights. Every game starts on Full; the menu switches it any time.
     /// </summary>
     public static class GraphicsQuality
     {
@@ -95,7 +95,7 @@ namespace GlassRoom
         {
             get
             {
-                if (!s_Applied) Set(Application.isMobilePlatform);
+                if (!s_Applied) Set(false);
                 return s_Low;
             }
             set => Set(value);
@@ -143,7 +143,7 @@ namespace GlassRoom
             // In the editor, put back the quality level it had once Play stops.
             int original = QualitySettings.GetQualityLevel();
             Application.quitting += () => QualitySettings.SetQualityLevel(original, true);
-            Set(Application.isMobilePlatform);
+            Set(false);
             SceneManager.sceneLoaded += (_, _) => ApplyToScene();
         }
     }
