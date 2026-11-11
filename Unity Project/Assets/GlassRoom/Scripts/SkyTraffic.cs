@@ -41,6 +41,10 @@ namespace GlassRoom
         const float CarGap = 1.2f;
         const float CarDiameter = 3.2f;
         const int MaxCarsPerTrain = 8;
+        // Each car slowly rolls around its own length as it glides, every car a little behind
+        // the one in front, so the twist travels back along the train.
+        const float SpinDegreesPerSecond = 25f;
+        const float SpinLagPerCar = 18f;
 
         class Train
         {
@@ -49,6 +53,7 @@ namespace GlassRoom
             public Renderer[] strips;
             public Transform tail;
             public float length;
+            public float spinPhase;
         }
 
         readonly List<List<Train>> m_Lanes = new List<List<Train>>();
@@ -87,7 +92,13 @@ namespace GlassRoom
                 var lane = lanes[l];
                 var trains = m_Lanes[l];
                 foreach (var t in trains)
+                {
                     t.root.position += Vector3.right * (lane.speed * dt);
+                    float spin = t.spinPhase + Time.time * SpinDegreesPerSecond;
+                    for (int i = 0; i < t.cars.Length; i++)
+                        if (t.cars[i].gameObject.activeSelf)
+                            t.cars[i].localRotation = Quaternion.Euler(spin - i * SpinLagPerCar, 0f, 0f);
+                }
 
                 foreach (var t in trains)
                 {
@@ -125,6 +136,7 @@ namespace GlassRoom
             foreach (var r in t.strips)
                 r.sharedMaterial = strip;
             t.length = count * (CarLength + CarGap);
+            t.spinPhase = Random.Range(0f, 360f);
             t.tail.localPosition = new Vector3(-t.length + CarGap + 0.1f, 0f, 0f);
         }
 

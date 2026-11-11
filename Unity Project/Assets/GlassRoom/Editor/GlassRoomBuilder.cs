@@ -92,7 +92,7 @@ namespace GlassRoom.Editor
                 StandUpScooterBuilder.AssignColliders(scooter);
                 StandUpScooterBuilder.FitGrips(scooter);
                 // The saved scene keeps its old value otherwise.
-                scooter.humVolume = 0.25f;
+                scooter.humVolume = 0.125f;
                 EditorUtility.SetDirty(scooter);
             }
             else StandUpScooterBuilder.Build(hall.transform, k_ScooterPosition, ScooterYaw);
@@ -113,6 +113,7 @@ namespace GlassRoom.Editor
             }
 
             MakeMirrorWalls(hall.transform);
+            TuneLighting();
             if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
 
             AllowAnyOrientation();
@@ -147,6 +148,33 @@ namespace GlassRoom.Editor
                 GameObjectUtility.SetStaticEditorFlags(wall.gameObject, flags & ~StaticEditorFlags.BatchingStatic);
                 EditorUtility.SetDirty(wall.gameObject);
             }
+        }
+
+        // The ring of lights in the middle is the main light: bright in the middle of the hall,
+        // fading so the far ends and corners start to get shadowy. The even fill lights are
+        // off and the background (ambient) light is low. The cozy corner keeps its lamp.
+        const float RingLightRange = 34f, RingLightIntensity = 2.6f;
+        static readonly Color k_AmbientSky = new Color(0.33f, 0.34f, 0.35f);
+        static readonly Color k_AmbientEquator = new Color(0.3f, 0.31f, 0.32f);
+        static readonly Color k_AmbientGround = new Color(0.23f, 0.24f, 0.25f);
+
+        static void TuneLighting()
+        {
+            foreach (var l in Object.FindObjectsByType<Light>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (l.name.StartsWith("Fill ")) l.enabled = false;
+                else if (l.name.StartsWith("Ring Light "))
+                {
+                    l.range = RingLightRange;
+                    l.intensity = RingLightIntensity;
+                }
+                else continue;
+                EditorUtility.SetDirty(l);
+            }
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = k_AmbientSky;
+            RenderSettings.ambientEquatorColor = k_AmbientEquator;
+            RenderSettings.ambientGroundColor = k_AmbientGround;
         }
 
         // Phone builds rotate with the phone: portrait and landscape, either way up.
@@ -564,8 +592,8 @@ namespace GlassRoom.Editor
                 l.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
                 l.spotAngle = 170f;
                 l.innerSpotAngle = 90f;
-                l.range = 20f;
-                l.intensity = 1.6f;
+                l.range = RingLightRange;
+                l.intensity = RingLightIntensity;
                 // The hall is empty, so shadows would cost frame time without showing anything.
                 l.shadows = LightShadows.None;
             }
@@ -578,6 +606,7 @@ namespace GlassRoom.Editor
                 var l = NewLight($"Fill {x},{z}", lights, LightType.Point, new Vector3(x, Height * 0.45f, z));
                 l.range = 30f;
                 l.intensity = 0.45f;
+                l.enabled = false; // off: the ring in the middle is the main light (see TuneLighting)
                 l.shadows = LightShadows.None;
             }
         }
@@ -883,9 +912,9 @@ namespace GlassRoom.Editor
             RenderSettings.skybox = sky;
             // Interior lighting comes from the hall, not the dark night sky.
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.74f, 0.75f, 0.77f);
-            RenderSettings.ambientEquatorColor = new Color(0.68f, 0.69f, 0.7f);
-            RenderSettings.ambientGroundColor = new Color(0.52f, 0.53f, 0.54f);
+            RenderSettings.ambientSkyColor = k_AmbientSky;
+            RenderSettings.ambientEquatorColor = k_AmbientEquator;
+            RenderSettings.ambientGroundColor = k_AmbientGround;
             RenderSettings.defaultReflectionMode = DefaultReflectionMode.Skybox;
             RenderSettings.fog = false;
         }

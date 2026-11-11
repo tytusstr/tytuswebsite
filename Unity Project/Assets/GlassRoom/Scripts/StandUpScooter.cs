@@ -42,7 +42,7 @@ namespace GlassRoom
         [Header("Sounds (recordings)")]
         [Tooltip("The electric motor hum: the riding sound.")]
         public AudioClip motorClip;
-        [Range(0f, 1f)] public float humVolume = 0.25f;
+        [Range(0f, 1f)] public float humVolume = 0.125f;
         public AudioClip stepOnClip;
         public AudioClip stepOffClip;
 

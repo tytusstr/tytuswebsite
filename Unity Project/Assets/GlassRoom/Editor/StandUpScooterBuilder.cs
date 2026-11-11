@@ -20,7 +20,14 @@ namespace GlassRoom.Editor
         public static GameObject Build(Transform parent, Vector3 position, float yaw)
         {
             var deckMat = Material("Scooter Deck", new Color(0.15f, 0.155f, 0.17f), 0.55f, 0.6f);
-            var aluminium = Material("Scooter Aluminium", new Color(0.78f, 0.79f, 0.81f), 0.42f, 1f); // brushed: polished, its mirror image on the floor showed it white
+            var aluminium = Material("Scooter Aluminium", new Color(0.11f, 0.115f, 0.125f), 0.3f, 0.15f);
+            // No highlights or reflections on the pole and handlebar: the floor's mirror sees them
+            // from below, where light from the ceiling glances off their sides and showed as a
+            // bright white streak. Plain satin charcoal looks the same from every angle.
+            aluminium.SetFloat("_SpecularHighlights", 0f);
+            aluminium.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+            aluminium.SetFloat("_EnvironmentReflections", 0f);
+            aluminium.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
             var rubber = Material("Scooter Rubber", new Color(0.03f, 0.03f, 0.035f), 0.18f, 0f);
             var screen = Material("Scooter Display", new Color(0.02f, 0.025f, 0.03f), 0.95f, 0f, new Color(0.35f, 0.75f, 1f) * 0.6f);
             var accent = Material("Scooter Light", Color.white, 0.9f, 0f, new Color(0.9f, 0.95f, 1f) * 3f);
