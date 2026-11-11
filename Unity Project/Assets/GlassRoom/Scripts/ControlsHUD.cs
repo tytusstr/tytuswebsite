@@ -26,6 +26,12 @@ namespace GlassRoom
         GameObject m_JumpButton;
 
         /// <summary>Shows or hides the phone Jump button (hidden while riding); the other buttons drop into its place.</summary>
+        /// <summary>Shows or hides the movement joystick (hidden while seated).</summary>
+        public void SetJoystickVisible(bool visible)
+        {
+            if (Joystick != null && Joystick.gameObject.activeSelf != visible) Joystick.gameObject.SetActive(visible);
+        }
+
         public void SetJumpVisible(bool visible)
         {
             if (m_JumpButton == null || m_JumpButton.activeSelf == visible) return;

@@ -266,6 +266,153 @@ namespace GlassRoom.Editor
         static float Hash(int x, int y) => Mathf.Repeat(Mathf.Sin(x * 12.9898f + y * 78.233f) * 43758.5453f, 1f);
 
         // Slim floor lamp with a glowing fabric shade and a warm light.
+        /// <summary>
+        /// Rebuilds the cozy corner's floor lamp in place, realistically: a weighted brass base,
+        /// slim pole with a switch collar, socket and glowing bulb, and a tapered drum shade in
+        /// real linen (Poly Haven "Rough Linen") that glows warm through the fabric. Lit by a
+        /// warm amber bulb light plus a soft pool of light on the floor below.
+        /// </summary>
+        public static void UpgradeLamp(Transform nook)
+        {
+            var lamp = nook.Find("Floor Lamp");
+            if (lamp == null) return;
+            foreach (var name in new[] { "Base", "Pole", "Shade", "Light", "Lamp Parts" })
+            {
+                var old = lamp.Find(name);
+                while (old != null) { Object.DestroyImmediate(old.gameObject); old = lamp.Find(name); }
+            }
+            var parts = new GameObject("Lamp Parts").transform;
+            parts.SetParent(lamp, false);
+
+            var brass = SimpleMaterial("Lamp Brass", new Color(0.62f, 0.47f, 0.27f), 0.68f, 1f);
+            var bulbMat = SimpleMaterial("Lamp Bulb", new Color(1f, 0.93f, 0.8f), 0.9f, 0f, new Color(1f, 0.7f, 0.38f) * 5f);
+            var linen = LinenShadeMaterial();
+
+            // Base: a low, weighted dome with a rounded edge.
+            LatheObject("Base", parts, brass, new[]
+            {
+                new Vector2(0f, 0.045f), new Vector2(0.05f, 0.044f), new Vector2(0.11f, 0.036f),
+                new Vector2(0.155f, 0.024f), new Vector2(0.17f, 0.014f), new Vector2(0.172f, 0.004f), new Vector2(0.168f, 0f)
+            }, 64, false);
+            // Pole, with a small collar where the turn switch sits, and the socket at the top.
+            LatheObject("Pole", parts, brass, new[]
+            {
+                new Vector2(0.016f, 0.04f), new Vector2(0.013f, 0.06f), new Vector2(0.012f, 1.0f),
+                new Vector2(0.02f, 1.0f), new Vector2(0.02f, 1.04f), new Vector2(0.012f, 1.04f),
+                new Vector2(0.012f, 1.5f), new Vector2(0.022f, 1.5f), new Vector2(0.022f, 1.56f), new Vector2(0f, 1.56f)
+            }, 32, false);
+            var knob = Primitive(PrimitiveType.Cylinder, "Switch", parts, brass);
+            knob.transform.localPosition = new Vector3(0.028f, 1.02f, 0f);
+            knob.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            knob.transform.localScale = new Vector3(0.012f, 0.012f, 0.012f);
+            // Bulb, seen from below the shade.
+            var bulb = Primitive(PrimitiveType.Sphere, "Bulb", parts, bulbMat);
+            bulb.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+            bulb.transform.localScale = new Vector3(0.06f, 0.075f, 0.06f);
+            // Shade: a drum, a little narrower at the top, open top and bottom, both sides drawn.
+            LatheObject("Shade", parts, linen, new[]
+            {
+                new Vector2(0.205f, 1.79f), new Vector2(0.24f, 1.47f)
+            }, 64, true);
+            // Thin brass rims at the shade's top and bottom edges, and a finial.
+            LatheObject("Shade Rim Top", parts, brass, new[] { new Vector2(0.207f, 1.795f), new Vector2(0.207f, 1.785f) }, 64, true);
+            LatheObject("Shade Rim Bottom", parts, brass, new[] { new Vector2(0.242f, 1.475f), new Vector2(0.242f, 1.465f) }, 64, true);
+            var finial = Primitive(PrimitiveType.Sphere, "Finial", parts, brass);
+            finial.transform.localPosition = new Vector3(0f, 1.8f, 0f);
+            finial.transform.localScale = Vector3.one * 0.025f;
+
+            // Light: the warm bulb glow, and a soft pool of light on the floor beneath the shade.
+            var amber = new Color(1f, 0.6f, 0.27f);
+            var glow = new GameObject("Light").AddComponent<Light>();
+            glow.transform.SetParent(lamp, false);
+            glow.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+            glow.type = LightType.Point;
+            glow.color = amber;
+            glow.intensity = 2.2f;
+            glow.range = 6.5f;
+            glow.shadows = LightShadows.None;
+            var pool = new GameObject("Floor Glow").AddComponent<Light>();
+            pool.transform.SetParent(lamp, false);
+            pool.transform.localPosition = new Vector3(0f, 1.52f, 0f);
+            pool.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            pool.type = LightType.Spot;
+            pool.color = amber;
+            pool.spotAngle = 120f;
+            pool.innerSpotAngle = 55f;
+            pool.intensity = 3f;
+            pool.range = 4f;
+            pool.shadows = LightShadows.None;
+            EditorUtility.SetDirty(lamp.gameObject);
+        }
+
+        static Material LinenShadeMaterial()
+        {
+            string tex = "Assets/GlassRoom/Textures/Linen Shade.jpg", nor = "Assets/GlassRoom/Textures/Linen Shade Normal.jpg";
+            if (AssetImporter.GetAtPath(nor) is TextureImporter ni && ni.textureType != TextureImporterType.NormalMap)
+            {
+                ni.textureType = TextureImporterType.NormalMap;
+                ni.SaveAndReimport();
+            }
+            var mat = SimpleMaterial("Lamp Shade Linen", new Color(1f, 0.95f, 0.87f), 0.15f, 0f, new Color(1f, 0.58f, 0.24f) * 1.1f);
+            var baseMap = AssetDatabase.LoadAssetAtPath<Texture2D>(tex);
+            mat.SetTexture("_BaseMap", baseMap);
+            mat.SetTextureScale("_BaseMap", new Vector2(3f, 1f));
+            mat.SetTexture("_EmissionMap", baseMap);
+            mat.SetTexture("_BumpMap", AssetDatabase.LoadAssetAtPath<Texture2D>(nor));
+            mat.EnableKeyword("_NORMALMAP");
+            mat.SetFloat("_Cull", 0f); // both sides: the inside of the shade shows from below
+            mat.doubleSidedGI = true;
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        // A round object made by spinning a side profile (radius, height) around the vertical axis.
+        static void LatheObject(string name, Transform parent, Material mat, Vector2[] profile, int segments, bool doubleSided)
+        {
+            var vertices = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var triangles = new List<int>();
+            int rows = profile.Length;
+            for (int i = 0; i <= segments; i++)
+            {
+                float a = i / (float)segments * Mathf.PI * 2f;
+                float c = Mathf.Cos(a), sn = Mathf.Sin(a);
+                for (int j = 0; j < rows; j++)
+                {
+                    vertices.Add(new Vector3(profile[j].x * c, profile[j].y, profile[j].x * sn));
+                    uvs.Add(new Vector2(i / (float)segments, j / (float)Mathf.Max(1, rows - 1)));
+                }
+            }
+            for (int i = 0; i < segments; i++)
+            for (int j = 0; j < rows - 1; j++)
+            {
+                int v = i * rows + j, n = v + rows;
+                triangles.AddRange(new[] { v, v + 1, n, v + 1, n + 1, n });
+            }
+            // Faces point outward: check on the widest part of the profile, flip if needed.
+            int widest = 0;
+            for (int j = 0; j < rows - 1; j++) if (profile[j].x + profile[j + 1].x > profile[widest].x + profile[widest + 1].x) widest = j;
+            {
+                int v = widest, n = v + rows;
+                Vector3 p0 = vertices[v], p1 = vertices[v + 1], p2 = vertices[n];
+                Vector3 face = Vector3.Cross(p1 - p0, p2 - p0);
+                Vector3 centre = (p0 + p1 + p2) / 3f;
+                if (Vector3.Dot(face, new Vector3(centre.x, 0f, centre.z)) < 0f)
+                    for (int t = 0; t < triangles.Count; t += 3) (triangles[t + 1], triangles[t + 2]) = (triangles[t + 2], triangles[t + 1]);
+            }
+            var mesh = new Mesh { name = "Lamp " + name };
+            mesh.SetVertices(vertices);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateTangents();
+            mesh.RecalculateBounds();
+            string path = $"Assets/GlassRoom/Meshes/Lamp {name}.asset";
+            AssetDatabase.DeleteAsset(path);
+            AssetDatabase.CreateAsset(mesh, path);
+            MeshPart(name, parent, mesh, mat, Vector3.zero, 0f);
+        }
+
         static void FloorLamp(Transform parent, Vector3 position)
         {
             var metal = SimpleMaterial("Lamp Metal", new Color(0.28f, 0.22f, 0.16f), 0.55f, 0.8f);
@@ -320,6 +467,38 @@ namespace GlassRoom.Editor
             }
         }
 
+        /// <summary>Gives the player bloody footprints, tyre tracks and squelches (BloodTracks).</summary>
+        public static void AddBloodTracks(GameObject player)
+        {
+            var tracks = player.GetComponent<BloodTracks>() ?? player.AddComponent<BloodTracks>();
+            var clips = new List<AudioClip>();
+            foreach (string guid in AssetDatabase.FindAssets("t:AudioClip", new[] { "Assets/GlassRoom/Audio/Blood" }))
+                clips.Add(AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid)));
+            tracks.squelchClips = clips.ToArray();
+            // Transparent, unlit: prints are dark red at whatever strength each one has.
+            string path = "Assets/GlassRoom/Materials/Blood Print.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.SetFloat("_Surface", 1f);
+            mat.SetFloat("_Blend", 0f);
+            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            mat.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetFloat("_ZWrite", 0f);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.SetColor("_BaseColor", new Color(0.3f, 0.015f, 0.025f, 0.85f));
+            EditorUtility.SetDirty(mat);
+            tracks.printMaterial = mat;
+            EditorUtility.SetDirty(tracks);
+        }
+
         /// <summary>Gives the player the leaf rustles for walking through plants.</summary>
         public static void AddPlantRustle(GameObject player)
         {
@@ -349,7 +528,7 @@ namespace GlassRoom.Editor
             var hoodie = SimpleMaterial("Body Hoodie", new Color(0.17f, 0.19f, 0.22f), 0.15f, 0f);
             var jeans = SimpleMaterial("Body Jeans", new Color(0.09f, 0.12f, 0.19f), 0.2f, 0f);
             var shoes = SimpleMaterial("Body Shoes", new Color(0.04f, 0.04f, 0.045f), 0.45f, 0f);
-            var blood = SimpleMaterial("Blood", new Color(0.2f, 0.004f, 0.012f), 0.94f, 0f);
+            var blood = SimpleMaterial("Blood", new Color(0.4f, 0.012f, 0.02f), 0.82f, 0f);
 
             // Blood first, flat on the floor: one large irregular pool under the head and chest,
             // and a few drips.
@@ -361,7 +540,9 @@ namespace GlassRoom.Editor
 
             // The figure: "Mannequiny", a free jointed mannequin (see Models/Mannequin/Sources.txt),
             // lying face down with its arms flung out, head at the pool.
-            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/GlassRoom/Models/Mannequin/Mannequin.obj");
+            // Re-posed with its own skeleton to lie collapsed: head turned, one arm flung past the
+            // head, the other limp at its side, one knee bent (Models/Mannequin/Mannequin Posed.obj).
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/GlassRoom/Models/Mannequin/Mannequin Posed.obj");
             if (model != null)
             {
                 var body = (GameObject)PrefabUtility.InstantiatePrefab(model);
@@ -369,7 +550,7 @@ namespace GlassRoom.Editor
                 body.transform.SetParent(root, false);
                 // Standing up the model faces +Z; tipped forward it lies face down, head toward +Z.
                 body.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                body.transform.localPosition = new Vector3(0.05f, 0.2f, -1.2f);
+                body.transform.localPosition = new Vector3(0.05f, 0.268f, -1.2f);
                 var shell = SimpleMaterial("Mannequin Shell", new Color(0.7f, 0.68f, 0.66f), 0.4f, 0f);
                 var dark = SimpleMaterial("Mannequin Dark", new Color(0.05f, 0.05f, 0.055f), 0.5f, 0f);
                 var joints = SimpleMaterial("Mannequin Joints", new Color(0.88f, 0.88f, 0.87f), 0.35f, 0f);
@@ -386,6 +567,55 @@ namespace GlassRoom.Editor
                     r.shadowCastingMode = ShadowCastingMode.Off;
                 }
             }
+
+            // A drag smear leading away from the body, toward the hall.
+            MeshPart("Blood Trail", root, BloodMesh("Blood Trail", 0.2f, 77, 0.25f), blood, new Vector3(1.0f, 0.0035f, -0.9f), 28f, new Vector3(1.1f, 1f, 6f));
+
+            // Spatter and runs on the wall behind, at body height and above.
+            var wall = new GameObject("Wall Spatter").transform;
+            wall.SetParent(root.parent, false);
+            var rnd = new System.Random(4242);
+            float wallZ = corner.z + 3.6f - 0.004f; // just off the north wall's inside face
+            for (int i = 0; i < 26; i++)
+            {
+                float x = corner.x - 1.6f + (float)rnd.NextDouble() * 2.6f;
+                float y = 0.25f + (float)System.Math.Pow(rnd.NextDouble(), 1.6) * 1.5f;
+                float size = 0.02f + (float)System.Math.Pow(rnd.NextDouble(), 2.2) * 0.14f;
+                var drop = new GameObject("Spatter " + i).transform;
+                drop.SetParent(wall, false);
+                drop.position = new Vector3(x, y, wallZ);
+                drop.rotation = Quaternion.Euler(-90f, 0f, 0f);
+                drop.localScale = Vector3.one;
+                drop.gameObject.AddComponent<MeshFilter>().sharedMesh = BloodMesh("Spatter " + i, size, 300 + i, 0.4f);
+                var dr = drop.gameObject.AddComponent<MeshRenderer>();
+                dr.sharedMaterial = blood;
+                dr.shadowCastingMode = ShadowCastingMode.Off;
+                // The bigger splashes run down the wall.
+                if (size > 0.07f)
+                {
+                    var run = new GameObject("Run " + i).transform;
+                    run.SetParent(wall, false);
+                    float len = 0.15f + (float)rnd.NextDouble() * 0.5f;
+                    run.position = new Vector3(x + ((float)rnd.NextDouble() - 0.5f) * size, y - len * 0.5f, wallZ - 0.0005f);
+                    run.rotation = Quaternion.Euler(-90f, 0f, 0f);
+                    run.localScale = new Vector3(0.12f, 1f, len / 0.1f);
+                    run.gameObject.AddComponent<MeshFilter>().sharedMesh = BloodMesh("Run " + i, 0.05f, 900 + i, 0.15f);
+                    var rr = run.gameObject.AddComponent<MeshRenderer>();
+                    rr.sharedMaterial = blood;
+                    rr.shadowCastingMode = ShadowCastingMode.Off;
+                }
+            }
+
+            // A failing cold light over the body: it hums, stutters and cuts out.
+            var flicker = new GameObject("Flickering Light").AddComponent<Light>();
+            flicker.transform.SetParent(root, false);
+            flicker.transform.localPosition = new Vector3(0.2f, 2.8f, 0f);
+            flicker.type = LightType.Point;
+            flicker.color = new Color(0.78f, 0.86f, 0.74f);
+            flicker.range = 6f;
+            flicker.intensity = 3.2f;
+            flicker.shadows = LightShadows.None;
+            flicker.gameObject.AddComponent<FlickerLight>();
 
             // Written in blood beside the body: "dw its / just ketchup" (Textures/Blood Text.png),
             // facing the hall so it reads the right way up as you walk over.

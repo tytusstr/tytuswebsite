@@ -8,9 +8,9 @@ Shader "GlassRoom/Mirror Wall"
         _BaseColor("Base Color", Color) = (0.93, 0.94, 0.95, 1)
         _Smoothness("Smoothness", Range(0, 1)) = 0.93
         _Metallic("Metallic", Range(0, 1)) = 0.05
-        _ReflectionStrength("Reflection Strength", Range(0, 1)) = 0.32
-        _MinReflectivity("Reflectivity Facing Straight On", Range(0, 1)) = 0.06
-        _FresnelPower("Fresnel Power", Range(1, 8)) = 4
+        _ReflectionStrength("Reflection Strength", Range(0, 1)) = 0.55
+        _MinReflectivity("Reflectivity Facing Straight On", Range(0, 1)) = 0.38
+        _FresnelPower("Fresnel Power", Range(1, 8)) = 2.5
     }
 
     SubShader

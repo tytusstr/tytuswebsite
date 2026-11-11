@@ -162,10 +162,14 @@ namespace GlassRoom.Editor
             }
             TuneLighting();
             GlassRoomProps.MakeSeats(hall.transform);
+            if (nook != null) GlassRoomProps.UpgradeLamp(nook);
             if (player != null) GlassRoomProps.AddPlantRustle(player.gameObject);
+            if (player != null) GlassRoomProps.AddBloodTracks(player.gameObject);
             // Far corner: diagonally opposite the cozy corner. Rebuilt each time (it's generated).
             var oldScene = hall.transform.Find("Crime Scene");
             if (oldScene != null) Object.DestroyImmediate(oldScene.gameObject);
+            var oldSpatter = hall.transform.Find("Wall Spatter");
+            if (oldSpatter != null) Object.DestroyImmediate(oldSpatter.gameObject);
             GlassRoomProps.AddCrimeScene(hall.transform, new Vector3(-Width / 2f + 3.2f, 0f, Length / 2f - 3.6f));
             if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
 
@@ -259,7 +263,7 @@ namespace GlassRoom.Editor
         static readonly Color k_AmbientSky = new Color(0.52f, 0.53f, 0.55f);
         static readonly Color k_AmbientEquator = new Color(0.47f, 0.48f, 0.5f);
         static readonly Color k_AmbientGround = new Color(0.36f, 0.37f, 0.38f);
-        static readonly Color k_LampAmber = new Color(1f, 0.56f, 0.2f);
+        static readonly Color k_LampAmber = new Color(1f, 0.6f, 0.27f);
 
         static void TuneLighting()
         {
@@ -282,7 +286,7 @@ namespace GlassRoom.Editor
                 else if (l.name == "Light" && l.transform.parent != null && l.transform.parent.name.Contains("Lamp"))
                 {
                     l.color = k_LampAmber;
-                    l.intensity = 2.8f;
+                    l.intensity = 2.2f;
                 }
                 else if (l.name.StartsWith("Ring Light "))
                 {

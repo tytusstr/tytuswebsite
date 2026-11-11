@@ -376,6 +376,8 @@ namespace GlassRoom
             m_StepSource.pitch = footstepPitch * Random.Range(0.95f, 1.04f) * (m_LeftFoot ? 1f : 0.97f);
             m_StepSource.panStereo = m_LeftFoot ? -0.08f : 0.08f;
             m_StepSource.PlayOneShot(m_StepClips[index], footstepVolume * loudness * Random.Range(0.85f, 1f));
+            // Blood underfoot: a squelch, and bloody prints for the next few steps.
+            if (BloodTracks.Instance != null) BloodTracks.Instance.Footstep(transform.position, m_Yaw, m_LeftFoot);
         }
 
         // ---------- Scooter ----------
@@ -645,8 +647,10 @@ namespace GlassRoom
 
             m_Hud.SetCrosshair(false, false);
             m_Hud.SetKeyHints();
-            // You can't jump on the scooter, so the Jump button goes away while riding.
-            m_Hud.SetJumpVisible(m_Ride == null);
+            // You can't jump on the scooter or from a chair, so the Jump button goes away then;
+            // and seated, there's no walking either, so the joystick goes too.
+            m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null);
+            m_Hud.SetJoystickVisible(m_Seat == null);
             if (menu) { m_Hud.SetContextButtons(); return; }
             if (m_Ride != null) { m_Hud.SetContextButtons(("Unmount", StepOff)); return; }
             if (m_Seat != null) { m_Hud.SetContextButtons(("Stand up", StandUp)); return; }

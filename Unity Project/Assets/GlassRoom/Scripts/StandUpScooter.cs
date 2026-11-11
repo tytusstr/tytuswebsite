@@ -198,6 +198,10 @@ namespace GlassRoom
                 Coast(m_Speed * dt);
             }
 
+            // Rolling through blood: a squelch and bloody tyre tracks (ridden or coasting).
+            if (BloodTracks.Instance != null && Mathf.Abs(m_Speed) > 0.05f)
+                BloodTracks.Instance.Roll(transform.position, transform.forward, transform.right, Mathf.Abs(m_Speed) * dt);
+
             float degrees = m_Speed * dt / wheelRadius * Mathf.Rad2Deg;
             foreach (var wheel in wheels)
                 if (wheel != null) wheel.Rotate(Vector3.right, degrees, Space.Self);
