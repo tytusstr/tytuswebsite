@@ -35,8 +35,13 @@ namespace GlassRoom.Editor
                 options = BuildOptions.None
             };
             BuildReport report;
+            var occlusion = SetAmbientOcclusion(false);
             try { report = BuildPipeline.BuildPlayer(options); }
-            finally { CleanUpWebScene(); }
+            finally
+            {
+                foreach (var feature in occlusion) feature.SetActive(true);
+                CleanUpWebScene();
+            }
             var summary = report.summary;
             if (summary.result == BuildResult.Succeeded)
                 Debug.Log($"Website build succeeded: {Path.GetFullPath(OutputFolder)} ({summary.totalSize / (1024 * 1024)} MB)");
@@ -75,6 +80,26 @@ namespace GlassRoom.Editor
             AssetDatabase.Refresh();
             if (!saved) Debug.LogError("Website build: could not save the website copy of the scene.");
             return saved;
+        }
+
+        // Ambient occlusion (soft shading in corners) draws the top half of the screen slightly
+        // darker in Safari, split by a line across the middle, so the website is built without
+        // it. Returns the effects it turned off so they can be turned back on for the editor.
+        static System.Collections.Generic.List<UnityEngine.Rendering.Universal.ScriptableRendererFeature> SetAmbientOcclusion(bool on)
+        {
+            var changed = new System.Collections.Generic.List<UnityEngine.Rendering.Universal.ScriptableRendererFeature>();
+            foreach (var guid in AssetDatabase.FindAssets("t:UniversalRendererData"))
+            {
+                var data = AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.Universal.ScriptableRendererData>(AssetDatabase.GUIDToAssetPath(guid));
+                if (data == null) continue;
+                foreach (var feature in data.rendererFeatures)
+                    if (feature != null && feature.GetType().Name == "ScreenSpaceAmbientOcclusion" && feature.isActive != on)
+                    {
+                        feature.SetActive(on);
+                        changed.Add(feature);
+                    }
+            }
+            return changed;
         }
 
         static void CleanUpWebScene()
