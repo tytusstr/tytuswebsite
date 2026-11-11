@@ -33,10 +33,21 @@ namespace GlassRoom
             m_Pointer = (RectTransform)go.transform;
             m_Pointer.SetParent(canvas, false);
             m_Pointer.anchorMin = m_Pointer.anchorMax = new Vector2(0.5f, 0.5f);
-            m_Pointer.pivot = new Vector2(0.06f, 0.96f); // the arrow's tip
-            m_Pointer.sizeDelta = new Vector2(30f, 30f);
             var image = go.AddComponent<Image>();
-            image.sprite = ArrowSprite();
+            var rick = PointerPicture.Large;
+            if (rick != null)
+            {
+                // A small picture of Rick Astley; it points from its centre.
+                image.sprite = Sprite.Create(rick, new Rect(0, 0, rick.width, rick.height), new Vector2(0.5f, 0.5f), 100f);
+                m_Pointer.pivot = new Vector2(0.5f, 0.5f);
+                m_Pointer.sizeDelta = new Vector2(44f, 44f);
+            }
+            else
+            {
+                image.sprite = ArrowSprite();
+                m_Pointer.pivot = new Vector2(0.06f, 0.96f); // the arrow's tip
+                m_Pointer.sizeDelta = new Vector2(30f, 30f);
+            }
             image.raycastTarget = false;
             go.SetActive(false);
         }

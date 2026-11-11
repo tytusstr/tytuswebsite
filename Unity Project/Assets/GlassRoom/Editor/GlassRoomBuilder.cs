@@ -90,6 +90,7 @@ namespace GlassRoom.Editor
             {
                 StandUpScooterBuilder.AssignSounds(scooter);
                 StandUpScooterBuilder.AssignColliders(scooter);
+                StandUpScooterBuilder.FitGrips(scooter);
                 // The saved scene keeps its old value otherwise.
                 scooter.humVolume = 0.25f;
                 EditorUtility.SetDirty(scooter);
@@ -155,7 +156,7 @@ namespace GlassRoom.Editor
 
             Directory.CreateDirectory(MaterialDir);
             Directory.CreateDirectory(MeshDir);
-            var glass = LitMaterial("White Glass", new Color(0.93f, 0.94f, 0.95f), 0.97f, 0.45f);
+            var glass = LitMaterial("White Glass", new Color(0.93f, 0.94f, 0.95f), 0.93f, 0.15f);
             var ceiling = LitMaterial("Ceiling", new Color(0.95f, 0.955f, 0.96f), 0.88f, 0f);
             var ring = LitMaterial("Ring Light", Color.white, 0.5f, 0f, k_WarmWhite * 9f);
             var window = WindowMaterial();
@@ -635,13 +636,15 @@ namespace GlassRoom.Editor
         // places every reflection where it belongs on the walls and ceiling. (Captures covering
         // only part of the hall each treated their own box ends as walls, so the reflections on
         // the long walls were projected onto pretend walls halfway down the hall.)
+        // The box runs from the floor to the hall's real ceiling (not the top of the skylight,
+        // which has its own capture): reflections are projected onto this box, so a box taller
+        // than the room put every reflection in the wrong place on the walls.
         static void FitHallProbe(ReflectionProbe probe)
         {
-            float top = Height + SkylightRise + 0.5f;
             probe.transform.position = new Vector3(0f, 1.6f, 0f);
             probe.boxProjection = true;
-            probe.size = new Vector3(Width, top + 0.2f, Length);
-            probe.center = new Vector3(0f, top / 2f - 1.6f, 0f);
+            probe.size = new Vector3(Width, Height, Length);
+            probe.center = new Vector3(0f, Height / 2f - 1.6f, 0f);
             probe.blendDistance = 0f;
             probe.resolution = 1024;
         }

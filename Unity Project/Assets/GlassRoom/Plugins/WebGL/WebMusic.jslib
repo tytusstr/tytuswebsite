@@ -65,14 +65,13 @@ mergeInto(LibraryManager.library, {
     m.wantPlay = false;
     m.pauseId = (m.pauseId || 0) + 1;
     var id = m.pauseId;
-    // Fade out quickly, then stop the player. iPhones can keep repeating the last moment of
-    // sound after a pause, so the mixer is stopped too, once it's silent.
-    m.fadeTo(0, 0.04);
+    // Fade out quickly, then pause the song. The browser's sound system itself keeps running:
+    // stopping and restarting it is what made a small hiccup when unpausing.
+    m.fadeTo(0, 0.05);
     setTimeout(function () {
       if (m.wantPlay || m.pauseId !== id) return;
       m.el.pause();
-      if (m.ctx && m.ctx.state === "running" && m.ctx.suspend) m.ctx.suspend();
-    }, 60);
+    }, 70);
   },
 
   WebMusic_Resume: function () {
@@ -80,19 +79,24 @@ mergeInto(LibraryManager.library, {
     if (!m) return;
     m.wantPlay = true;
     m.pauseId = (m.pauseId || 0) + 1;
-    // Stay silent until the mixer is running again and the song is actually playing, so
-    // nothing left over from before the pause can be heard; then fade in.
+    var id = m.pauseId;
     if (m.gain) {
       m.gain.gain.cancelScheduledValues(0);
       m.gain.gain.value = 0;
     }
-    var start = function () {
-      var p = m.el.play();
-      var fadeIn = function () { if (m.wantPlay) m.fadeTo(m.volume, 0.12); };
-      if (p && p.then) p.then(fadeIn, function () {}); else fadeIn();
+    if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
+    // Silent until the song is truly playing again, then a gentle fade up, so the restart
+    // itself can never be heard.
+    var fadeIn = function () {
+      m.el.removeEventListener("playing", fadeIn);
+      if (!m.wantPlay || m.pauseId !== id) return;
+      setTimeout(function () { if (m.wantPlay && m.pauseId === id) m.fadeTo(m.volume, 0.25); }, 40);
     };
-    if (m.ctx && m.ctx.state !== "running") m.ctx.resume().then(start, start);
-    else start();
+    // Unpaused again before the pause finished: the song never stopped, so just fade back up.
+    if (!m.el.paused) { m.fadeTo(m.volume, 0.25); return; }
+    m.el.addEventListener("playing", fadeIn);
+    var p = m.el.play();
+    if (p && p.catch) p.catch(function () {});
   },
 
   WebMusic_SetVolume: function (volume) {

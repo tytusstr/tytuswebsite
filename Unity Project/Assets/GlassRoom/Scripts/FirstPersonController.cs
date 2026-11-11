@@ -62,7 +62,7 @@ namespace GlassRoom
         bool m_LeftFoot;
         bool m_JumpPressed;
         // Holding Space jumps again only after standing on the ground this long.
-        const float HeldJumpPause = 0.1f;
+        const float HeldJumpPause = 0.02f;
         float m_GroundedTime;
         // The "Space to jump" hint: waits until the menu is closed, then shows for a few seconds.
         bool m_JumpHintPending;

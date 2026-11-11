@@ -90,11 +90,11 @@ namespace GlassRoom
 
     /// <summary>
     /// Look sensitivity from the menu slider, which starts in the middle until it's moved (then it's remembered). Each mode has its
-    /// own range: computer 0.2× / 1.5× (middle) / 10×, phone 0.1× / 0.5× (middle) / 3×.
+    /// own range: computer 0.2× / 1× (middle) / 10×, phone 0.1× / 0.5× (middle) / 3×.
     /// </summary>
     public static class LookSettings
     {
-        const float ComputerMin = 0.2f, ComputerMiddle = 1.5f, ComputerMax = 10f;
+        const float ComputerMin = 0.2f, ComputerMiddle = 1f, ComputerMax = 10f;
         const float PhoneMin = 0.1f, PhoneMiddle = 0.5f, PhoneMax = 3f;
 
         /// <summary>Slider position from 0 to 1; 0.5 is the middle.</summary>

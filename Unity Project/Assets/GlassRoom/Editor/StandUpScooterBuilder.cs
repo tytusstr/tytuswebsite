@@ -60,7 +60,7 @@ namespace GlassRoom.Editor
             const float barWidth = 0.5f;
             Part(PrimitiveType.Cylinder, "Handlebar", t, aluminium, poleTop, new Vector3(0.026f, barWidth / 2f, 0.026f), new Vector3(0f, 0f, 90f));
             foreach (float x in new[] { -1f, 1f })
-                Part(PrimitiveType.Cylinder, "Grip", t, rubber, poleTop + Vector3.right * x * (barWidth / 2f - 0.06f), new Vector3(0.034f, 0.06f, 0.034f), new Vector3(0f, 0f, 90f));
+                Part(PrimitiveType.Cylinder, "Grip", t, rubber, poleTop + Vector3.right * x * (barWidth / 2f - GripInset), new Vector3(0.034f, GripHalfLength, 0.034f), new Vector3(0f, 0f, 90f));
             Part(PrimitiveType.Cube, "Display", t, screen, poleTop + new Vector3(0f, 0.022f, -0.01f), new Vector3(0.07f, 0.014f, 0.045f), new Vector3(-20f, 0f, 0f));
 
             var scooter = root.AddComponent<StandUpScooter>();
@@ -72,6 +72,29 @@ namespace GlassRoom.Editor
         }
 
         /// <summary>
+        // Each grip reaches a few millimetres past the end of the bar, so the two ends never sit
+        // in the same place (they flickered, fighting over which one shows).
+        const float GripHalfLength = 0.063f;
+        const float GripInset = 0.057f;
+
+        /// <summary>Fits the grips of a scooter already in the scene (see GripHalfLength).</summary>
+        public static void FitGrips(StandUpScooter scooter)
+        {
+            var bar = scooter.transform.Find("Handlebar");
+            if (bar == null) return;
+            float halfBar = bar.localScale.y;
+            foreach (Transform child in scooter.transform)
+            {
+                if (child.name != "Grip") continue;
+                var p = child.localPosition;
+                float side = Mathf.Sign(p.x - bar.localPosition.x);
+                child.localPosition = new Vector3(bar.localPosition.x + side * (halfBar - GripInset), p.y, p.z);
+                var s = child.localScale;
+                child.localScale = new Vector3(s.x, GripHalfLength, s.z);
+                EditorUtility.SetDirty(child);
+            }
+        }
+
         /// Gives a scooter tight click areas around just its deck, pole and handlebar, plus a
         /// taller box that only stops you walking through it (clicks and taps ignore that box).
         /// Also updates a scooter already in a scene, without touching anything else on it.

@@ -190,6 +190,7 @@ namespace GlassRoom
             m_ComputerButtonText.color = phone ? k_Ink : Color.white;
             m_PhoneButtonBg.color = phone ? k_Accent : k_Idle;
             m_PhoneButtonText.color = phone ? Color.white : k_Ink;
+            PointerPicture.Apply(!phone);
             m_MouseRow.SetActive(!phone);
             m_QNote.SetActive(!phone);
             m_Lower.anchoredPosition = new Vector2(0f, phone ? 0f : -MouseRowHeight);
@@ -391,7 +392,7 @@ namespace GlassRoom
             // Computer mode only: right under the Controls choice; the rest moves down for it.
             m_MouseRow = AddSwitch(card, -258f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
             // Computer mode only: a small reminder in the top-left corner.
-            var qNote = Label(card, "Press Q to open or close settings", 20, k_Muted, -36f);
+            var qNote = Label(card, "Press Q to open/close", 20, k_Muted, -36f);
             qNote.alignment = TextAnchor.UpperLeft;
             qNote.rectTransform.offsetMin = new Vector2(28f, qNote.rectTransform.offsetMin.y);
             m_QNote = qNote.gameObject;

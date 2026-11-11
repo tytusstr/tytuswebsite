@@ -23,13 +23,35 @@
       border-radius: 999px; padding: 16px 44px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
     #enter:hover, #enter:focus-visible { color: #000; background: #fff; border-color: #fff; }
     #enter:active { transform: scale(0.98); }
+    /* Glitch, after CSS-Tricks' "Glitch Effect on Text": a red and a cyan copy of the word sit
+       over it, shifted apart, each showing only a horizontal slice that jumps around. */
+    #label { position: relative; display: inline-block; }
+    #label .ch { display: inline-block; transition: transform 0.05s linear, color 0.05s linear; }
+    #label .ch.scrambling { color: rgba(255,255,255,0.55); }
+    #label .ch.red { color: #ff2d3a; }
+    #label::before, #label::after { content: attr(data-text); position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+    #label::before { color: #ff2d3a; transform: translate(-2px, 0); }
+    #label::after { color: #18e8ff; transform: translate(2px, 0); }
+    #enter.glitch #label::before { opacity: 0.9; animation: slice-a 0.32s steps(1) infinite; }
+    #enter.glitch #label::after { opacity: 0.9; animation: slice-b 0.27s steps(1) infinite; }
+    #enter.glitch #label { animation: shake 0.32s steps(1) infinite; }
+    @keyframes slice-a {
+      0% { clip-path: inset(12% 0 70% 0); } 14% { clip-path: inset(62% 0 8% 0); } 28% { clip-path: inset(38% 0 44% 0); }
+      42% { clip-path: inset(80% 0 2% 0); } 57% { clip-path: inset(4% 0 82% 0); } 71% { clip-path: inset(50% 0 30% 0); }
+      85% { clip-path: inset(24% 0 58% 0); } 100% { clip-path: inset(70% 0 12% 0); } }
+    @keyframes slice-b {
+      0% { clip-path: inset(66% 0 16% 0); } 16% { clip-path: inset(8% 0 76% 0); } 33% { clip-path: inset(44% 0 36% 0); }
+      50% { clip-path: inset(86% 0 4% 0); } 66% { clip-path: inset(20% 0 62% 0); } 83% { clip-path: inset(54% 0 26% 0); }
+      100% { clip-path: inset(2% 0 88% 0); } }
+    @keyframes shake { 0% { transform: none; } 25% { transform: translate(-1px, 0); } 50% { transform: translate(1px, -1px); } 75% { transform: translate(0, 1px); } }
+    @media (prefers-reduced-motion: reduce) { #enter.glitch #label, #enter.glitch #label::before, #enter.glitch #label::after { animation: none; opacity: 0; } }
     #loading.ready #bar { opacity: 0; pointer-events: none; }
     #loading.ready #enter { opacity: 1; pointer-events: auto; transform: none; }
   </style>
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
-  <div id="loading"><div id="bar"><div id="fill"></div></div><button id="enter" type="button">Enter</button></div>
+  <div id="loading"><div id="bar"><div id="fill"></div></div><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button></div>
   <script>
     // Browsers refuse to capture the mouse pointer until the player has clicked. The game asks
     // again on the first click, so a refusal is harmless; catch it here so Safari doesn't show
@@ -84,7 +106,83 @@
       if (ready) return;
       ready = true;
       loading.classList.add("ready");
+      decode();
     };
+
+    // Scramble and reveal, after the baffle.js library: every 50 ms each hidden letter shows a
+    // new random digit (jittering up or down, sometimes flashing red), and letters are revealed
+    // one by one at a steady pace until the word stands. Then short glitch bursts now and then.
+    var label = document.getElementById("label");
+    var WORD = "ENTER", DIGITS = "0123456789";
+    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var chars = WORD.split("").map(function (c) {
+      var span = document.createElement("span");
+      span.className = "ch";
+      span.textContent = c;
+      return span;
+    });
+    label.textContent = "";
+    chars.forEach(function (span) { label.appendChild(span); });
+
+    function glitch(ms) {
+      if (reduceMotion) return;
+      enter.classList.add("glitch");
+      clearTimeout(glitch.timer);
+      glitch.timer = setTimeout(function () { enter.classList.remove("glitch"); }, ms);
+    }
+
+    function scrambleFrame(hidden) {
+      var shown = "";
+      chars.forEach(function (span, i) {
+        if (hidden[i]) {
+          span.textContent = DIGITS[Math.floor(Math.random() * DIGITS.length)];
+          span.className = "ch scrambling" + (Math.random() < 0.12 ? " red" : "");
+          span.style.transform = "translateY(" + (Math.round(Math.random() * 6) - 3) + "px)";
+        } else {
+          span.textContent = WORD[i];
+          span.className = "ch";
+          span.style.transform = "none";
+        }
+        shown += span.textContent;
+      });
+      label.setAttribute("data-text", shown);
+    }
+
+    // Rolls numbers for `hold` ms, then reveals one letter every `step` ms in random order.
+    function decode(hold, step) {
+      if (reduceMotion) return;
+      hold = hold || 700; step = step || 110;
+      var hidden = WORD.split("").map(function () { return true; });
+      var order = WORD.split("").map(function (_, i) { return i; }).sort(function () { return Math.random() - 0.5; });
+      var started = performance.now();
+      clearInterval(decode.timer);
+      decode.timer = setInterval(function () {
+        var revealed = Math.max(0, Math.floor((performance.now() - started - hold) / step));
+        for (var k = 0; k < Math.min(revealed, order.length); k++) hidden[order[k]] = false;
+        scrambleFrame(hidden);
+        if (revealed >= order.length) {
+          clearInterval(decode.timer);
+          glitch(380);
+          scheduleBursts();
+        }
+      }, 50);
+    }
+
+    // Every few seconds a quick glitch, sometimes with a couple of letters re-rolling.
+    function scheduleBursts() {
+      clearTimeout(scheduleBursts.timer);
+      scheduleBursts.timer = setTimeout(function () {
+        if (entered) return;
+        glitch(220 + Math.random() * 160);
+        if (Math.random() < 0.6) {
+          var hidden = WORD.split("").map(function () { return Math.random() < 0.35; });
+          scrambleFrame(hidden);
+          setTimeout(function () { scrambleFrame(WORD.split("").map(function () { return false; })); }, 140);
+        }
+        scheduleBursts();
+      }, 2200 + Math.random() * 2400);
+    }
+    enter.addEventListener("mouseenter", function () { glitch(300); });
     function enterGame() {
       if (!ready || entered) return;
       entered = true;
