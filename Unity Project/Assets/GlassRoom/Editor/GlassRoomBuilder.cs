@@ -114,6 +114,10 @@ namespace GlassRoom.Editor
 
             MakeMirrorWalls(hall.transform);
             TuneLighting();
+            GlassRoomProps.MakeSeats(hall.transform);
+            if (player != null) GlassRoomProps.AddPlantRustle(player.gameObject);
+            // Far corner: diagonally opposite the cozy corner.
+            GlassRoomProps.AddCrimeScene(hall.transform, new Vector3(-Width / 2f + 3.2f, 0f, Length / 2f - 3.6f));
             if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
 
             AllowAnyOrientation();
@@ -150,19 +154,41 @@ namespace GlassRoom.Editor
             }
         }
 
-        // The ring of lights in the middle is the main light: bright in the middle of the hall,
-        // fading so the far ends and corners start to get shadowy. The even fill lights are
-        // off and the background (ambient) light is low. The cozy corner keeps its lamp.
-        const float RingLightRange = 34f, RingLightIntensity = 2.6f;
-        static readonly Color k_AmbientSky = new Color(0.33f, 0.34f, 0.35f);
-        static readonly Color k_AmbientEquator = new Color(0.3f, 0.31f, 0.32f);
-        static readonly Color k_AmbientGround = new Color(0.23f, 0.24f, 0.25f);
+        // The ring of lights in the middle is the main light, strong enough to light the whole
+        // hall. Fill lights spread it across the middle part of the hall only, so the far ends
+        // and corners are the only parts that start to get darker. The cozy corner keeps its
+        // lamp, in a warm amber.
+        const float RingLightRange = 46f, RingLightIntensity = 5f;
+        static readonly float[] k_FillZ = { -16f, 0f, 16f };
+        const float FillX = 9f, FillRange = 26f, FillIntensity = 1.5f;
+        static readonly Color k_AmbientSky = new Color(0.52f, 0.53f, 0.55f);
+        static readonly Color k_AmbientEquator = new Color(0.47f, 0.48f, 0.5f);
+        static readonly Color k_AmbientGround = new Color(0.36f, 0.37f, 0.38f);
+        static readonly Color k_LampAmber = new Color(1f, 0.56f, 0.2f);
 
         static void TuneLighting()
         {
             foreach (var l in Object.FindObjectsByType<Light>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
-                if (l.name.StartsWith("Fill ")) l.enabled = false;
+                if (l.name.StartsWith("Fill "))
+                {
+                    // Six fills: left and right of the middle, and a little toward each end.
+                    var fills = new List<Light>();
+                    foreach (Transform sibling in l.transform.parent)
+                        if (sibling.name.StartsWith("Fill ")) fills.Add(sibling.GetComponent<Light>());
+                    int k = fills.IndexOf(l);
+                    if (k < 0 || k >= 6) { l.enabled = false; EditorUtility.SetDirty(l); continue; }
+                    l.transform.position = new Vector3(k % 2 == 0 ? -FillX : FillX, Height * 0.5f, k_FillZ[k / 2]);
+                    l.range = FillRange;
+                    l.intensity = FillIntensity;
+                    l.enabled = true;
+                    EditorUtility.SetDirty(l.transform);
+                }
+                else if (l.name == "Light" && l.transform.parent != null && l.transform.parent.name.Contains("Lamp"))
+                {
+                    l.color = k_LampAmber;
+                    l.intensity = 2.8f;
+                }
                 else if (l.name.StartsWith("Ring Light "))
                 {
                     l.range = RingLightRange;
@@ -606,7 +632,7 @@ namespace GlassRoom.Editor
                 var l = NewLight($"Fill {x},{z}", lights, LightType.Point, new Vector3(x, Height * 0.45f, z));
                 l.range = 30f;
                 l.intensity = 0.45f;
-                l.enabled = false; // off: the ring in the middle is the main light (see TuneLighting)
+                // Placed and set by TuneLighting.
                 l.shadows = LightShadows.None;
             }
         }

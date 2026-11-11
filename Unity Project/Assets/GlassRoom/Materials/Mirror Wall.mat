@@ -27,8 +27,8 @@ Material:
     m_Floats:
     - _FresnelPower: 4
     - _Metallic: 0.05
-    - _MinReflectivity: 0.1
-    - _ReflectionStrength: 0.5
+    - _MinReflectivity: 0.06
+    - _ReflectionStrength: 0.32
     - _Smoothness: 0.93
     m_Colors:
     - _BaseColor: {r: 0.93, g: 0.94, b: 0.95, a: 1}

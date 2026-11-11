@@ -102,6 +102,7 @@ namespace GlassRoom
             m_Hud = ControlsHUD.Create();
             m_Interactables.AddRange(FindObjectsByType<StandUpScooter>(FindObjectsSortMode.None));
             m_Interactables.AddRange(FindObjectsByType<MusicSpeaker>(FindObjectsSortMode.None));
+            m_Interactables.AddRange(FindObjectsByType<Seat>(FindObjectsSortMode.None));
             SetupFootsteps();
             InputModeManager.ModeChanged += OnModeChanged;
             OnModeChanged(InputModeManager.Mode);
@@ -202,6 +203,12 @@ namespace GlassRoom
                 m_RideLookYaw = 0f;
                 m_Pitch = Mathf.Clamp(m_Pitch - look.y, -maxPitch, maxPitch);
                 cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
+            }
+            else if (m_Seat != null)
+            {
+                // Seated: look around freely; walking or jumping stands you up.
+                ApplyLook(look);
+                if (move.sqrMagnitude > 0.04f || m_JumpPressed) StandUp();
             }
             else if (m_Ride != null)
             {
@@ -385,6 +392,7 @@ namespace GlassRoom
             {
                 Component thing = hit.collider.GetComponentInParent<StandUpScooter>();
                 if (thing == null) thing = hit.collider.GetComponentInParent<MusicSpeaker>();
+                if (thing == null) thing = hit.collider.GetComponentInParent<Seat>();
                 if (thing == null || !WithinReach(hit.collider)) continue;
                 if (hit.distance < nearest)
                 {
@@ -411,6 +419,17 @@ namespace GlassRoom
         void ClickAt(Vector2 screenPosition, bool rightButton)
         {
             var thing = InteractableAt(screenPosition);
+            // Sitting: a click stands you back up (the speaker still works from the chair).
+            if (m_Seat != null && !(thing is MusicSpeaker))
+            {
+                if (!rightButton) StandUp();
+                return;
+            }
+            if (thing is Seat seat && !rightButton && m_Ride == null)
+            {
+                SitDown(seat);
+                return;
+            }
             if (thing is MusicSpeaker speaker)
             {
                 if (rightButton) speaker.Skip();
@@ -420,6 +439,42 @@ namespace GlassRoom
                 StepOff();
             else if (thing is StandUpScooter scooter && !rightButton)
                 StepOn(scooter);
+        }
+
+        // ---------- Sitting ----------
+
+        Seat m_Seat;
+        const float SeatedEyeAboveSeat = 0.74f;
+
+        // Sits in the chair, facing out of it. You can look around but not walk; moving,
+        // jumping or clicking stands you back up.
+        void SitDown(Seat seat)
+        {
+            m_Seat = seat;
+            m_Velocity = Vector3.zero;
+            m_Controller.enabled = false;
+            transform.position = seat.FloorPoint;
+            m_Yaw = Quaternion.LookRotation(seat.Facing).eulerAngles.y;
+            transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
+            m_Pitch = 0f;
+            cameraPivot.localRotation = Quaternion.identity;
+            cameraPivot.localPosition = new Vector3(0f, seat.seatHeight + SeatedEyeAboveSeat, 0f);
+            seat.PlaySitSound();
+        }
+
+        void StandUp()
+        {
+            var seat = m_Seat;
+            if (seat == null) return;
+            m_Seat = null;
+            // Step out in front of the chair, or stay put if that's blocked.
+            Vector3 front = seat.FloorPoint + seat.Facing * 0.75f;
+            float r = m_Controller.radius;
+            if (!Physics.CheckCapsule(front + Vector3.up * (r + 0.05f), front + Vector3.up * (m_Controller.height - r), r, ~0, QueryTriggerInteraction.Ignore))
+                transform.position = front + Vector3.up * 0.02f;
+            cameraPivot.localPosition = new Vector3(0f, m_EyeHeight, 0f);
+            m_Controller.enabled = true;
+            m_Velocity = Vector3.zero;
         }
 
         void StepOn(StandUpScooter scooter)
@@ -578,6 +633,8 @@ namespace GlassRoom
                     if (hinted.IsOn) m_Hud.SetKeyHints(playPause, next);
                     else m_Hud.SetKeyHints(playPause);
                 }
+                else if (m_Seat != null) m_Hud.SetKeyHints((Click, "to stand up"));
+                else if (target is Seat) m_Hud.SetKeyHints((Click, "to sit"));
                 else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
                 else if (m_JumpHintShown < JumpHintSeconds + JumpHintFade)
@@ -592,10 +649,13 @@ namespace GlassRoom
             m_Hud.SetJumpVisible(m_Ride == null);
             if (menu) { m_Hud.SetContextButtons(); return; }
             if (m_Ride != null) { m_Hud.SetContextButtons(("Unmount", StepOff)); return; }
+            if (m_Seat != null) { m_Hud.SetContextButtons(("Stand up", StandUp)); return; }
 
             var near = NearbyInView();
             if (near is StandUpScooter scooter)
                 m_Hud.SetContextButtons(("Mount", () => StepOn(scooter)));
+            else if (near is Seat seat)
+                m_Hud.SetContextButtons(("Sit", () => SitDown(seat)));
             else if (near is MusicSpeaker speaker)
             {
                 if (speaker.IsOn) m_Hud.SetContextButtons(("Play / Pause", speaker.TogglePlayPause), ("Skip", speaker.Skip));

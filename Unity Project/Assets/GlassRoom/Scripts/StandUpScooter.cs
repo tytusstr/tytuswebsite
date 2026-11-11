@@ -47,6 +47,18 @@ namespace GlassRoom
         public AudioClip stepOffClip;
 
         AudioSource m_Motor, m_Effects;
+
+        [Header("Headlight")]
+        [Tooltip("Brightness of the headlight when fully on.")]
+        public float headlightIntensity = 4f;
+        [Tooltip("Seconds to fade on after stepping on, and off after stepping off.")]
+        public float headlightFade = 1.2f;
+        Light m_Headlight;
+        Renderer m_HeadlightStrip;
+        Color m_StripGlow;
+        float m_HeadlightLevel;
+        MaterialPropertyBlock m_StripBlock;
+        static readonly int k_EmissionId = Shader.PropertyToID("_EmissionColor");
 #if UNITY_WEBGL && !UNITY_EDITOR
         // In a web browser, 3D sound is recalculated every frame things move, which is heavy on
         // phones, so the scooter is heard plainly there.
@@ -59,6 +71,7 @@ namespace GlassRoom
 
         void Awake()
         {
+            BuildHeadlight();
             m_Effects = NewSource("Step", null, false);
             m_Motor = NewSource("Motor", AtFullLevel(motorClip), true);
         }
@@ -120,12 +133,64 @@ namespace GlassRoom
             transform.position += direction * length;
         }
 
+        // A light at the strip on the front of the deck, shining ahead and a little down.
+        void BuildHeadlight()
+        {
+            var strip = transform.Find("Front Light");
+            Vector3 local = strip != null ? strip.localPosition : new Vector3(0f, 0.08f, 0.35f);
+            var go = new GameObject("Headlight");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = local + new Vector3(0f, 0.02f, 0.03f);
+            go.transform.localRotation = Quaternion.Euler(8f, 0f, 0f);
+            m_Headlight = go.AddComponent<Light>();
+            m_Headlight.type = LightType.Spot;
+            m_Headlight.color = new Color(0.92f, 0.96f, 1f);
+            m_Headlight.spotAngle = 70f;
+            m_Headlight.innerSpotAngle = 35f;
+            m_Headlight.range = 14f;
+            m_Headlight.intensity = 0f;
+            m_Headlight.shadows = LightShadows.None;
+            m_Headlight.enabled = false;
+            if (strip != null)
+            {
+                m_HeadlightStrip = strip.GetComponent<Renderer>();
+                if (m_HeadlightStrip != null && m_HeadlightStrip.sharedMaterial != null && m_HeadlightStrip.sharedMaterial.HasProperty(k_EmissionId))
+                    m_StripGlow = m_HeadlightStrip.sharedMaterial.GetColor(k_EmissionId);
+                m_StripBlock = new MaterialPropertyBlock();
+            }
+            ShowHeadlight();
+        }
+
+        // Fades the headlight towards on while ridden, off otherwise.
+        void UpdateHeadlight(float dt)
+        {
+            float target = m_Ridden ? 1f : 0f;
+            if (Mathf.Approximately(m_HeadlightLevel, target)) return;
+            m_HeadlightLevel = Mathf.MoveTowards(m_HeadlightLevel, target, dt / Mathf.Max(0.01f, headlightFade));
+            ShowHeadlight();
+        }
+
+        void ShowHeadlight()
+        {
+            // Eased, so it glows up softly rather than switching.
+            float level = Mathf.SmoothStep(0f, 1f, m_HeadlightLevel);
+            m_Headlight.intensity = headlightIntensity * level;
+            m_Headlight.enabled = level > 0.001f;
+            if (m_HeadlightStrip != null)
+            {
+                m_HeadlightStrip.GetPropertyBlock(m_StripBlock);
+                m_StripBlock.SetColor(k_EmissionId, m_StripGlow * Mathf.Lerp(0.08f, 1f, level));
+                m_HeadlightStrip.SetPropertyBlock(m_StripBlock);
+            }
+        }
+
         /// <summary>Called every frame while riding with the signed speed in metres per second.</summary>
         public void UpdateMotion(float speed) => m_Speed = speed;
 
         void Update()
         {
             float dt = Time.deltaTime;
+            UpdateHeadlight(dt);
             // Stepped off while moving: it rolls on by itself, slowing down, until it stops.
             if (!m_Ridden && m_Speed != 0f)
             {

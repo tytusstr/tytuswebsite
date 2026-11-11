@@ -54,7 +54,13 @@ namespace GlassRoom
             public Transform tail;
             public float length;
             public float spinPhase;
+            public Renderer[][] carRings;
+            public Color glow;
         }
+
+        static readonly int k_EmissionId = Shader.PropertyToID("_EmissionColor");
+        MaterialPropertyBlock m_Block;
+        Mesh m_Ring;
 
         readonly List<List<Train>> m_Lanes = new List<List<Train>>();
         Mesh m_Capsule, m_Cube, m_Sphere;
@@ -64,6 +70,8 @@ namespace GlassRoom
             m_Capsule = PrimitiveMesh(PrimitiveType.Capsule);
             m_Cube = PrimitiveMesh(PrimitiveType.Cube);
             m_Sphere = PrimitiveMesh(PrimitiveType.Sphere);
+            m_Ring = TorusMesh(CarDiameter * 0.5f + 0.015f, 0.075f, 48, 10);
+            m_Block = new MaterialPropertyBlock();
 
             foreach (var lane in lanes)
             {
@@ -96,8 +104,16 @@ namespace GlassRoom
                     t.root.position += Vector3.right * (lane.speed * dt);
                     float spin = t.spinPhase + Time.time * SpinDegreesPerSecond;
                     for (int i = 0; i < t.cars.Length; i++)
-                        if (t.cars[i].gameObject.activeSelf)
-                            t.cars[i].localRotation = Quaternion.Euler(spin - i * SpinLagPerCar, 0f, 0f);
+                    {
+                        if (!t.cars[i].gameObject.activeSelf) continue;
+                        float angle = spin - i * SpinLagPerCar;
+                        t.cars[i].localRotation = Quaternion.Euler(angle, 0f, 0f);
+                        // The rings glow brighter and softer as the car turns, so the pulse
+                        // travels back along the train with the twist.
+                        float pulse = 0.55f + 0.45f * (0.5f + 0.5f * Mathf.Sin(angle * Mathf.Deg2Rad * 2f));
+                        m_Block.SetColor(k_EmissionId, t.glow * pulse);
+                        foreach (var ring in t.carRings[i]) ring.SetPropertyBlock(m_Block);
+                    }
                 }
 
                 foreach (var t in trains)
@@ -114,6 +130,41 @@ namespace GlassRoom
                     Place(t, lane, Mathf.Min(rearmost, startX) - Random.Range(lane.minGap, lane.maxGap));
                 }
             }
+        }
+
+        // A ring (torus) around the X axis: the car's length.
+        static Mesh TorusMesh(float radius, float thickness, int segments, int sides)
+        {
+            var vertices = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var triangles = new List<int>();
+            for (int i = 0; i <= segments; i++)
+            {
+                float a = i / (float)segments * Mathf.PI * 2f;
+                var centre = new Vector3(0f, Mathf.Cos(a), Mathf.Sin(a));
+                for (int j = 0; j <= sides; j++)
+                {
+                    float b = j / (float)sides * Mathf.PI * 2f;
+                    Vector3 n = centre * Mathf.Cos(b) + Vector3.right * Mathf.Sin(b);
+                    vertices.Add(centre * radius + n * thickness);
+                    normals.Add(n);
+                }
+            }
+            int row = sides + 1;
+            for (int i = 0; i < segments; i++)
+            for (int j = 0; j < sides; j++)
+            {
+                int v = i * row + j;
+                // Both windings, so it shows whichever way it faces.
+                triangles.AddRange(new[] { v, v + 1, v + row, v + 1, v + row + 1, v + row });
+                triangles.AddRange(new[] { v, v + row, v + 1, v + 1, v + row, v + row + 1 });
+            }
+            var mesh = new Mesh { name = "Train Ring" };
+            mesh.SetVertices(vertices);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         static Mesh PrimitiveMesh(PrimitiveType type)
@@ -135,6 +186,7 @@ namespace GlassRoom
                 t.cars[i].gameObject.SetActive(i < count);
             foreach (var r in t.strips)
                 r.sharedMaterial = strip;
+            t.glow = strip.GetColor(k_EmissionId);
             t.length = count * (CarLength + CarGap);
             t.spinPhase = Random.Range(0f, 360f);
             t.tail.localPosition = new Vector3(-t.length + CarGap + 0.1f, 0f, 0f);
@@ -145,7 +197,7 @@ namespace GlassRoom
             var root = new GameObject("Train") { layer = gameObject.layer }.transform;
             root.SetParent(transform, false);
             root.localScale = Vector3.one * lane.scale;
-            var t = new Train { root = root, cars = new Transform[MaxCarsPerTrain] };
+            var t = new Train { root = root, cars = new Transform[MaxCarsPerTrain], carRings = new Renderer[MaxCarsPerTrain][] };
             var strips = new List<Renderer>();
 
             for (int i = 0; i < MaxCarsPerTrain; i++)
@@ -155,13 +207,18 @@ namespace GlassRoom
                 car.localPosition = new Vector3(-(i + 0.5f) * (CarLength + CarGap), 0f, 0f);
                 t.cars[i] = car;
 
-                // Capsule body lying along X.
+                // A sleek capsule lying along X, the same all the way round, so it looks right
+                // from every side as it rolls.
                 Part("Body", car, m_Capsule, bodyMaterial, Vector3.zero, new Vector3(CarDiameter, CarLength / 2f, CarDiameter), new Vector3(0f, 0f, 90f));
-                // Window strips along both sides, and an underglow that makes it look like it floats.
-                float side = CarDiameter * 0.49f;
-                strips.Add(Part("Strip L", car, m_Cube, stripMaterials[0], new Vector3(0f, 0.25f, side), new Vector3(CarLength * 0.72f, 0.38f, 0.06f)).GetComponent<Renderer>());
-                strips.Add(Part("Strip R", car, m_Cube, stripMaterials[0], new Vector3(0f, 0.25f, -side), new Vector3(CarLength * 0.72f, 0.38f, 0.06f)).GetComponent<Renderer>());
-                strips.Add(Part("Strip Under", car, m_Cube, stripMaterials[0], new Vector3(0f, -CarDiameter * 0.49f, 0f), new Vector3(CarLength * 0.8f, 0.06f, CarDiameter * 0.45f)).GetComponent<Renderer>());
+                // Thin glowing rings around the body: near each end and in the middle.
+                var rings = new List<Renderer>();
+                foreach (float along in new[] { -0.36f, 0f, 0.36f })
+                {
+                    var ring = Part("Ring", car, m_Ring, stripMaterials[0], new Vector3(along * (CarLength - CarDiameter), 0f, 0f), Vector3.one).GetComponent<Renderer>();
+                    rings.Add(ring);
+                    strips.Add(ring);
+                }
+                t.carRings[i] = rings.ToArray();
             }
             t.strips = strips.ToArray();
 

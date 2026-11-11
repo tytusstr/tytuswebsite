@@ -8,8 +8,8 @@ Shader "GlassRoom/Mirror Wall"
         _BaseColor("Base Color", Color) = (0.93, 0.94, 0.95, 1)
         _Smoothness("Smoothness", Range(0, 1)) = 0.93
         _Metallic("Metallic", Range(0, 1)) = 0.05
-        _ReflectionStrength("Reflection Strength", Range(0, 1)) = 0.5
-        _MinReflectivity("Reflectivity Facing Straight On", Range(0, 1)) = 0.1
+        _ReflectionStrength("Reflection Strength", Range(0, 1)) = 0.32
+        _MinReflectivity("Reflectivity Facing Straight On", Range(0, 1)) = 0.06
         _FresnelPower("Fresnel Power", Range(1, 8)) = 4
     }
 
@@ -120,7 +120,9 @@ Shader "GlassRoom/Mirror Wall"
                 half facing = saturate(dot(inputData.normalWS, inputData.viewDirectionWS));
                 half fresnel = _MinReflectivity + (1 - _MinReflectivity) * pow(1 - facing, _FresnelPower);
                 half amount = fresnel * _ReflectionStrength;
-                color.rgb = color.rgb * (1 - amount * 0.6) + reflection * amount;
+                // The wall keeps most of its own white; the reflection is laid gently on top, so
+                // dark parts of the reflected room never make the wall look smoky.
+                color.rgb = color.rgb * (1 - amount * 0.25) + reflection * amount * 0.75;
 
                 color.rgb = MixFog(color.rgb, input.fogFactor);
                 return half4(color.rgb, 1);

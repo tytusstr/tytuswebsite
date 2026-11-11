@@ -269,7 +269,7 @@ namespace GlassRoom.Editor
         static void FloorLamp(Transform parent, Vector3 position)
         {
             var metal = SimpleMaterial("Lamp Metal", new Color(0.28f, 0.22f, 0.16f), 0.55f, 0.8f);
-            var shade = SimpleMaterial("Lamp Shade", new Color(0.95f, 0.9f, 0.8f), 0.1f, 0f, new Color(1f, 0.8f, 0.55f) * 1.2f);
+            var shade = SimpleMaterial("Lamp Shade", new Color(0.95f, 0.9f, 0.8f), 0.1f, 0f, new Color(1f, 0.57f, 0.22f) * 1.3f); // amber glow
 
             var lamp = new GameObject("Floor Lamp").transform;
             lamp.SetParent(parent, false);
@@ -291,8 +291,8 @@ namespace GlassRoom.Editor
             glow.transform.SetParent(lamp, false);
             glow.transform.localPosition = new Vector3(0f, 1.5f, 0f);
             glow.type = LightType.Point;
-            glow.color = new Color(1f, 0.8f, 0.58f);
-            glow.intensity = 2.4f;
+            glow.color = new Color(1f, 0.56f, 0.2f); // warm amber
+            glow.intensity = 2.8f;
             glow.range = 7f;
             glow.shadows = LightShadows.None;
 
@@ -300,6 +300,131 @@ namespace GlassRoom.Editor
             blocker.center = new Vector3(0f, 0.9f, 0f);
             blocker.height = 1.8f;
             blocker.radius = LampColliderRadius;
+        }
+
+        // ---------- Seats, plant sounds, corner scene ----------
+
+        const string SitSound = "Assets/GlassRoom/Audio/Seating/Sit Down.wav";
+        const string RustleFolder = "Assets/GlassRoom/Audio/Plants";
+
+        /// <summary>Lets you sit in each lounge chair (Seat), with the sitting sound.</summary>
+        public static void MakeSeats(Transform hall)
+        {
+            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SitSound);
+            foreach (var t in hall.GetComponentsInChildren<Transform>(true))
+            {
+                if (!t.name.StartsWith(LoungeChair) || !PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)) continue;
+                var seat = t.GetComponent<Seat>() ?? t.gameObject.AddComponent<Seat>();
+                seat.sitClip = clip;
+                EditorUtility.SetDirty(seat);
+            }
+        }
+
+        /// <summary>Gives the player the leaf rustles for walking through plants.</summary>
+        public static void AddPlantRustle(GameObject player)
+        {
+            var rustle = player.GetComponent<PlantRustle>() ?? player.AddComponent<PlantRustle>();
+            var clips = new List<AudioClip>();
+            foreach (string guid in AssetDatabase.FindAssets("t:AudioClip", new[] { RustleFolder }))
+                clips.Add(AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid)));
+            rustle.clips = clips.ToArray();
+            EditorUtility.SetDirty(rustle);
+        }
+
+        /// <summary>
+        /// A crime scene in the far corner (diagonally opposite the cozy corner): a figure lying
+        /// face down, one arm flung out, in a glossy pool of blood with a few drips around it.
+        /// Built once; left alone after that.
+        /// </summary>
+        public static void AddCrimeScene(Transform hall, Vector3 corner)
+        {
+            if (hall.Find("Crime Scene") != null) return;
+            var root = new GameObject("Crime Scene").transform;
+            root.SetParent(hall, false);
+            root.position = corner;
+            root.rotation = Quaternion.Euler(0f, 32f, 0f);
+
+            var skin = SimpleMaterial("Body Skin", new Color(0.74f, 0.55f, 0.46f), 0.35f, 0f);
+            var hair = SimpleMaterial("Body Hair", new Color(0.07f, 0.05f, 0.04f), 0.3f, 0f);
+            var hoodie = SimpleMaterial("Body Hoodie", new Color(0.17f, 0.19f, 0.22f), 0.15f, 0f);
+            var jeans = SimpleMaterial("Body Jeans", new Color(0.09f, 0.12f, 0.19f), 0.2f, 0f);
+            var shoes = SimpleMaterial("Body Shoes", new Color(0.04f, 0.04f, 0.045f), 0.45f, 0f);
+            var blood = SimpleMaterial("Blood", new Color(0.2f, 0.004f, 0.012f), 0.94f, 0f);
+
+            // Blood first, flat on the floor: one large irregular pool under the head and chest,
+            // and a few drips.
+            MeshPart("Blood Pool", root, BloodMesh("Blood Pool", 0.95f, 1234, 0.28f), blood, new Vector3(0.15f, 0.003f, 0.5f), 0f);
+            MeshPart("Blood Drip 1", root, BloodMesh("Blood Drip 1", 0.09f, 7, 0.35f), blood, new Vector3(1.15f, 0.003f, 0.9f), 0f);
+            MeshPart("Blood Drip 2", root, BloodMesh("Blood Drip 2", 0.06f, 19, 0.35f), blood, new Vector3(1.4f, 0.003f, 1.25f), 40f);
+            MeshPart("Blood Drip 3", root, BloodMesh("Blood Drip 3", 0.12f, 33, 0.3f), blood, new Vector3(-0.9f, 0.003f, 1.05f), 80f);
+            MeshPart("Blood Smear", root, BloodMesh("Blood Smear", 0.22f, 51, 0.45f), blood, new Vector3(0.75f, 0.003f, -0.2f), 20f, new Vector3(1.8f, 1f, 0.5f));
+
+            // The figure, lying face down along the corner's +Z, head toward the pool's centre.
+            Limb(PrimitiveType.Capsule, "Torso", root, hoodie, new Vector3(0f, 0.125f, 0.12f), new Vector3(0.4f, 0.33f, 0.25f), new Vector3(90f, 0f, 0f));
+            Limb(PrimitiveType.Sphere, "Head", root, skin, new Vector3(0.06f, 0.11f, 0.64f), new Vector3(0.2f, 0.22f, 0.24f), new Vector3(0f, 25f, 0f));
+            Limb(PrimitiveType.Sphere, "Hair", root, hair, new Vector3(0.06f, 0.15f, 0.66f), new Vector3(0.21f, 0.17f, 0.22f), new Vector3(0f, 25f, 0f));
+            Limb(PrimitiveType.Capsule, "Leg L", root, jeans, new Vector3(-0.13f, 0.08f, -0.6f), new Vector3(0.16f, 0.46f, 0.15f), new Vector3(90f, -6f, 0f));
+            Limb(PrimitiveType.Capsule, "Leg R", root, jeans, new Vector3(0.16f, 0.08f, -0.62f), new Vector3(0.16f, 0.46f, 0.15f), new Vector3(90f, 9f, 0f));
+            Limb(PrimitiveType.Cube, "Shoe L", root, shoes, new Vector3(-0.19f, 0.06f, -1.1f), new Vector3(0.11f, 0.1f, 0.27f), new Vector3(0f, -6f, 0f));
+            Limb(PrimitiveType.Cube, "Shoe R", root, shoes, new Vector3(0.24f, 0.06f, -1.13f), new Vector3(0.11f, 0.1f, 0.27f), new Vector3(0f, 9f, 0f));
+            // One arm flung out past the head, the other bent by the side.
+            Limb(PrimitiveType.Capsule, "Arm R", root, hoodie, new Vector3(0.34f, 0.065f, 0.62f), new Vector3(0.11f, 0.33f, 0.11f), new Vector3(90f, -28f, 0f));
+            Limb(PrimitiveType.Sphere, "Hand R", root, skin, new Vector3(0.5f, 0.045f, 0.93f), new Vector3(0.09f, 0.05f, 0.12f), new Vector3(0f, -28f, 0f));
+            Limb(PrimitiveType.Capsule, "Arm L", root, hoodie, new Vector3(-0.3f, 0.065f, 0.0f), new Vector3(0.11f, 0.3f, 0.11f), new Vector3(90f, 18f, 0f));
+            Limb(PrimitiveType.Sphere, "Hand L", root, skin, new Vector3(-0.38f, 0.045f, -0.28f), new Vector3(0.09f, 0.05f, 0.12f), new Vector3(0f, 18f, 0f));
+        }
+
+        static void Limb(PrimitiveType type, string name, Transform root, Material mat, Vector3 position, Vector3 scale, Vector3 euler)
+        {
+            var go = Primitive(type, name, root, mat);
+            go.transform.localPosition = position;
+            go.transform.localRotation = Quaternion.Euler(euler);
+            go.transform.localScale = scale;
+        }
+
+        static void MeshPart(string name, Transform root, Mesh mesh, Material mat, Vector3 position, float yaw, Vector3? scale = null)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = position;
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            go.transform.localScale = scale ?? Vector3.one;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        // A flat, irregular puddle: a circle whose edge wobbles (several overlapping waves), so
+        // it looks like spilled liquid rather than a disc. Faces up; saved as an asset.
+        static Mesh BloodMesh(string name, float radius, int seed, float wobble)
+        {
+            const int points = 72;
+            var random = new System.Random(seed);
+            float[] amp = new float[4], phase = new float[4];
+            for (int k = 0; k < 4; k++) { amp[k] = (float)random.NextDouble() * wobble / (k + 1); phase[k] = (float)random.NextDouble() * Mathf.PI * 2f; }
+            var vertices = new List<Vector3> { Vector3.zero };
+            var normals = new List<Vector3> { Vector3.up };
+            var triangles = new List<int>();
+            for (int i = 0; i < points; i++)
+            {
+                float a = i / (float)points * Mathf.PI * 2f;
+                float r = 1f;
+                for (int k = 0; k < 4; k++) r += amp[k] * Mathf.Sin(a * (k + 2) + phase[k]);
+                vertices.Add(new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * radius * r);
+                normals.Add(Vector3.up);
+                triangles.AddRange(new[] { 0, 1 + (i + 1) % points, 1 + i });
+            }
+            var mesh = new Mesh { name = name };
+            mesh.SetVertices(vertices);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateBounds();
+            string dir = "Assets/GlassRoom/Meshes";
+            string path = $"{dir}/{name}.asset";
+            AssetDatabase.DeleteAsset(path);
+            AssetDatabase.CreateAsset(mesh, path);
+            return mesh;
         }
 
         static GameObject Primitive(PrimitiveType type, string name, Transform parent, Material mat)
