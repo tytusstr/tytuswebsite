@@ -115,7 +115,9 @@ namespace GlassRoom.Editor
             // The walls are matte plaster now (GalleryLook), not live mirrors.
             FixFloorJoins(hall.transform);
             FloorMaterial();
-            AddBaseboards(hall.transform);
+            // No skirting boards: the walls meet the floor directly (they run below it).
+            var boards = hall.transform.Find("Baseboards");
+            if (boards != null) Object.DestroyImmediate(boards.gameObject);
             var ring = hall.transform.Find("Ring Light");
             if (ring != null)
             {
@@ -228,7 +230,10 @@ namespace GlassRoom.Editor
         }
 
         const float WallThickness = 0.2f;
-        const float WallBelowFloor = 0.2f;
+        // Walls reach well below the floor. The floor's mirror image is drawn by a camera under
+        // the floor: where it looked past the bottom of a wall it saw empty background, which
+        // showed as a thin dark seam along the base of every wall. Deep walls fill that view.
+        const float WallBelowFloor = 4f;
 
         // The floor used to stop exactly where the walls began, and the walls stood exactly on
         // the floor's surface: edges in the same place fight over which one shows (like the
@@ -489,16 +494,18 @@ namespace GlassRoom.Editor
         static Material FloorMaterial()
         {
             var mat = LoadOrCreate("Floor Glass", Shader.Find("GlassRoom/Planar Glass Floor"));
-            mat.SetColor("_BaseColor", new Color(0.36f, 0.4f, 0.48f));
-            mat.SetFloat("_Smoothness", 0.8f);
+            // Dark, nearly black blue-grey, with a strong, slightly smeared reflection, like
+            // freshly sealed concrete that still looks a little wet.
+            mat.SetColor("_BaseColor", new Color(0.11f, 0.125f, 0.16f));
+            mat.SetFloat("_Smoothness", 0.9f);
             mat.SetFloat("_Metallic", 0f);
-            mat.SetFloat("_ReflectionStrength", 0.7f);
-            mat.SetFloat("_MinReflectivity", 0.14f);
-            mat.SetFloat("_FresnelPower", 3f);
-            mat.SetFloat("_TileSize", 4f);
-            mat.SetFloat("_BumpScale", 0.25f);
-            mat.SetFloat("_RippleStrength", 0.006f);
-            mat.SetFloat("_ReflectionBlur", 0.018f);
+            mat.SetFloat("_ReflectionStrength", 0.95f);
+            mat.SetFloat("_MinReflectivity", 0.3f);
+            mat.SetFloat("_FresnelPower", 2.5f);
+            mat.SetFloat("_TileSize", 5f);
+            mat.SetFloat("_BumpScale", 0.15f);
+            mat.SetFloat("_RippleStrength", 0.004f);
+            mat.SetFloat("_ReflectionBlur", 0.009f);
             string dir = Root + "/Textures/";
             mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Polished Concrete Color.jpg"));
             mat.SetTexture("_BumpMap", ImportAsNormalMap(dir + "Polished Concrete Normal.jpg"));

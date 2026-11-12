@@ -134,7 +134,7 @@ Shader "GlassRoom/Planar Glass Floor"
                 // level spread along the streak give an even, soft blur.
                 half3 reflection = 0;
                 float blur = _ReflectionBlur * (0.6 + roughness);
-                float lod = blur > 0 ? 2.2 + roughness * 1.5 : 0;
+                float lod = blur > 0 ? 0.8 + roughness * 1.4 : 0;
                 const int taps = 7;
                 UNITY_UNROLL
                 for (int k = 0; k < taps; k++)
