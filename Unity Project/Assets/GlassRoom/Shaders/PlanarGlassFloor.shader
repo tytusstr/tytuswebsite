@@ -15,6 +15,7 @@ Shader "GlassRoom/Planar Glass Floor"
         _TileSize("Texture Tile Size (m)", Float) = 3
         _BumpScale("Normal Strength", Range(0, 2)) = 0.4
         _RippleStrength("Reflection Ripple", Range(0, 0.05)) = 0.006
+        _ReflectionBlur("Reflection Blur", Range(0, 0.05)) = 0
     }
 
     SubShader
@@ -56,6 +57,7 @@ Shader "GlassRoom/Planar Glass Floor"
                 float _TileSize;
                 half _BumpScale;
                 half _RippleStrength;
+                half _ReflectionBlur;
             CBUFFER_END
 
             TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
@@ -126,7 +128,22 @@ Shader "GlassRoom/Planar Glass Floor"
                 // Tiny unevenness in the polished stone ripples the reflection a little.
                 float2 reflectionUV = float2(1 - inputData.normalizedScreenSpaceUV.x, inputData.normalizedScreenSpaceUV.y)
                                     + bump.xy * _RippleStrength;
-                half3 reflection = SAMPLE_TEXTURE2D(_PlanarReflectionTex, sampler_PlanarReflectionTex, reflectionUV).rgb;
+                // A satin-polished floor blurs what it reflects, most of all up and down (lights
+                // stretch into soft streaks toward you), more where the surface is rougher. The
+                // reflection has mipmaps (see PlanarReflection): a few taps of a small, smooth
+                // level spread along the streak give an even, soft blur.
+                half3 reflection = 0;
+                float blur = _ReflectionBlur * (0.6 + roughness);
+                float lod = blur > 0 ? 2.2 + roughness * 1.5 : 0;
+                const int taps = 7;
+                UNITY_UNROLL
+                for (int k = 0; k < taps; k++)
+                {
+                    float t = (k / (float)(taps - 1)) * 2 - 1;
+                    float2 o = float2(0, t * blur * 2.0);
+                    reflection += SAMPLE_TEXTURE2D_LOD(_PlanarReflectionTex, sampler_PlanarReflectionTex, reflectionUV + o, lod).rgb;
+                }
+                reflection /= taps;
                 half facing = saturate(dot(inputData.normalWS, inputData.viewDirectionWS));
                 half fresnel = _MinReflectivity + (1 - _MinReflectivity) * pow(1 - facing, _FresnelPower);
                 // Rougher patches of the stone reflect a little less.

@@ -112,7 +112,7 @@ namespace GlassRoom.Editor
                 EditorUtility.SetDirty(player);
             }
 
-            MakeMirrorWalls(hall.transform);
+            // The walls are matte plaster now (GalleryLook), not live mirrors.
             FixFloorJoins(hall.transform);
             FloorMaterial();
             AddBaseboards(hall.transform);
@@ -174,6 +174,8 @@ namespace GlassRoom.Editor
             if (oldSpatter != null) Object.DestroyImmediate(oldSpatter.gameObject);
             GlassRoomProps.AddCrimeScene(hall.transform, new Vector3(-Width / 2f + 3.2f, 0f, Length / 2f - 3.6f));
             if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
+            // The gallery look: plaster walls, dark ceiling with downlights, skylight slot.
+            GalleryLook.Apply(hall.transform);
 
             AllowAnyOrientation();
 
@@ -482,24 +484,25 @@ namespace GlassRoom.Editor
             return mat;
         }
 
-        // Polished black marble (Textures/Black Marble *, ambientCG Marble006, CC0) with the
-        // live mirror reflection on top.
+        // Dark blue-grey polished concrete (Textures/Polished Concrete *, ambientCG
+        // Concrete015, CC0) with a soft, blurred reflection of the room on top.
         static Material FloorMaterial()
         {
             var mat = LoadOrCreate("Floor Glass", Shader.Find("GlassRoom/Planar Glass Floor"));
-            mat.SetColor("_BaseColor", Color.white);
-            mat.SetFloat("_Smoothness", 0.96f);
+            mat.SetColor("_BaseColor", new Color(0.36f, 0.4f, 0.48f));
+            mat.SetFloat("_Smoothness", 0.8f);
             mat.SetFloat("_Metallic", 0f);
-            mat.SetFloat("_ReflectionStrength", 0.85f);
-            mat.SetFloat("_MinReflectivity", 0.32f);
-            mat.SetFloat("_FresnelPower", 4f);
-            mat.SetFloat("_TileSize", 3f);
-            mat.SetFloat("_BumpScale", 0.35f);
-            mat.SetFloat("_RippleStrength", 0.004f);
+            mat.SetFloat("_ReflectionStrength", 0.7f);
+            mat.SetFloat("_MinReflectivity", 0.14f);
+            mat.SetFloat("_FresnelPower", 3f);
+            mat.SetFloat("_TileSize", 4f);
+            mat.SetFloat("_BumpScale", 0.25f);
+            mat.SetFloat("_RippleStrength", 0.006f);
+            mat.SetFloat("_ReflectionBlur", 0.018f);
             string dir = Root + "/Textures/";
-            mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Black Marble Color.jpg"));
-            mat.SetTexture("_BumpMap", ImportAsNormalMap(dir + "Black Marble Normal.jpg"));
-            mat.SetTexture("_RoughnessMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Black Marble Roughness.jpg"));
+            mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Polished Concrete Color.jpg"));
+            mat.SetTexture("_BumpMap", ImportAsNormalMap(dir + "Polished Concrete Normal.jpg"));
+            mat.SetTexture("_RoughnessMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Polished Concrete Roughness.jpg"));
             EditorUtility.SetDirty(mat);
             return mat;
         }

@@ -21,6 +21,9 @@ namespace GlassRoom
 
         Camera m_ReflectionCamera;
         RenderTexture m_Texture;
+        // A copy at half size with mipmaps, for the soft blurred look of a satin-polished floor
+        // (the shader samples its smaller levels).
+        RenderTexture m_Soft;
 
         void OnDisable()
         {
@@ -125,7 +128,23 @@ namespace GlassRoom
                 cam.Render();
             Shader.SetGlobalFloat("_MirrorsDisabled", 0f);
 
-            Shader.SetGlobalTexture(k_TextureId, m_Texture);
+            int sw = Mathf.Max(16, m_Texture.width / 2), sh = Mathf.Max(16, m_Texture.height / 2);
+            if (m_Soft == null || m_Soft.width != sw || m_Soft.height != sh)
+            {
+                if (m_Soft != null) m_Soft.Release();
+                m_Soft = new RenderTexture(sw, sh, 0, RenderTextureFormat.DefaultHDR)
+                {
+                    name = "Planar Reflection Soft",
+                    useMipMap = true,
+                    autoGenerateMips = false,
+                    filterMode = FilterMode.Trilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                m_Soft.Create();
+            }
+            Graphics.Blit(m_Texture, m_Soft);
+            m_Soft.GenerateMips();
+            Shader.SetGlobalTexture(k_TextureId, m_Soft);
             Shader.SetGlobalFloat(k_WeightId, 1f);
         }
 
