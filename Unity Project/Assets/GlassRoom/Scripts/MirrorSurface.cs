@@ -143,9 +143,12 @@ namespace GlassRoom
             Vector3 up = Vector3.Reflect(main.transform.up, m_Normal);
             cam.transform.SetPositionAndRotation(eye, Quaternion.LookRotation(forward, up));
             cam.ResetWorldToCameraMatrix();
-            // Nothing behind the wall (outside the hall) may show: clip exactly at the wall.
+            // Nothing behind the wall (outside the hall) may show: clip at the wall. A hair behind
+            // its face, not in front: clipping in front cut off the neighbouring wall where the
+            // two meet, leaving a thin line down every corner. (This wall itself is hidden
+            // while its mirror image is drawn.)
             cam.projectionMatrix = main.projectionMatrix;
-            cam.projectionMatrix = cam.CalculateObliqueMatrix(CameraSpacePlane(cam, m_Point, m_Normal, 0.02f));
+            cam.projectionMatrix = cam.CalculateObliqueMatrix(CameraSpacePlane(cam, m_Point, m_Normal, -0.005f));
 
             // While this mirror draws, other mirrors (the floor, other walls) show their plain
             // look; their live images belong to the main view.

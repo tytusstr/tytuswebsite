@@ -32,10 +32,10 @@
     #label .ch.scrambling { color: rgba(255,255,255,0.55); }
     #label .ch.red { color: #ff2d3a; }
     #label::before, #label::after { content: attr(data-text); position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-    #label::before { color: #ff2d3a; transform: translate(-2px, 0); }
-    #label::after { color: #18e8ff; transform: translate(2px, 0); }
-    #enter.glitch #label::before { opacity: 0.8; animation: slice-a 0.32s steps(1) infinite; }
-    #enter.glitch #label::after { opacity: 0.8; animation: slice-b 0.28s steps(1) infinite; }
+    #label::before { color: #ff2d3a; transform: translate(-3px, 0); }
+    #label::after { color: #18e8ff; transform: translate(3px, 0); }
+    #enter.glitch #label::before { opacity: 0.9; animation: slice-a 0.24s steps(1) infinite; }
+    #enter.glitch #label::after { opacity: 0.9; animation: slice-b 0.2s steps(1) infinite; }
     @keyframes slice-a {
       0% { clip-path: inset(12% 0 70% 0); } 14% { clip-path: inset(62% 0 8% 0); } 28% { clip-path: inset(38% 0 44% 0); }
       42% { clip-path: inset(80% 0 2% 0); } 57% { clip-path: inset(4% 0 82% 0); } 71% { clip-path: inset(50% 0 30% 0); }
@@ -140,7 +140,7 @@
       chars.forEach(function (span, i) {
         if (hidden[i]) {
           span.textContent = DIGITS[Math.floor(Math.random() * DIGITS.length)];
-          span.className = "ch scrambling" + (Math.random() < 0.06 ? " red" : "");
+          span.className = "ch scrambling" + (Math.random() < 0.1 ? " red" : "");
         } else {
           span.textContent = WORD[i];
           span.className = "ch";
@@ -153,7 +153,7 @@
     // Rolls numbers for `hold` ms, then reveals one letter every `step` ms in random order.
     function decode(hold, step) {
       if (reduceMotion) return;
-      hold = hold || 900; step = step || 130;
+      hold = hold || 1700; step = step || 190;
       var hidden = WORD.split("").map(function () { return true; });
       var order = WORD.split("").map(function (_, i) { return i; }).sort(function () { return Math.random() - 0.5; });
       var started = performance.now();
@@ -164,7 +164,7 @@
         scrambleFrame(hidden);
         if (revealed >= order.length) {
           clearInterval(decode.timer);
-          glitch(260);
+          glitch(380);
           scheduleBursts();
         }
       }, 60);
@@ -175,15 +175,15 @@
       clearTimeout(scheduleBursts.timer);
       scheduleBursts.timer = setTimeout(function () {
         if (entered) return;
-        glitch(160 + Math.random() * 160);
-        if (Math.random() < 0.35) {
-          // One letter briefly turns back into a number.
-          var one = Math.floor(Math.random() * WORD.length);
-          scrambleFrame(WORD.split("").map(function (_, i) { return i === one; }));
-          setTimeout(function () { scrambleFrame(WORD.split("").map(function () { return false; })); }, 140);
+        glitch(220 + Math.random() * 220);
+        if (Math.random() < 0.55) {
+          // A letter or two briefly turn back into numbers.
+          var one = Math.floor(Math.random() * WORD.length), two = Math.random() < 0.4 ? Math.floor(Math.random() * WORD.length) : -1;
+          scrambleFrame(WORD.split("").map(function (_, i) { return i === one || i === two; }));
+          setTimeout(function () { scrambleFrame(WORD.split("").map(function () { return false; })); }, 180);
         }
         scheduleBursts();
-      }, 2600 + Math.random() * 2600);
+      }, 1800 + Math.random() * 2200);
     }
     enter.addEventListener("mouseenter", function () { glitch(180); });
     // Capturing the mouse pointer (for looking around in computer mode) is only allowed by

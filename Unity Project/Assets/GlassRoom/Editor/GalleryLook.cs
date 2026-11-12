@@ -36,12 +36,15 @@ namespace GlassRoom.Editor
             var plaster = Material("Gallery Plaster", new Color(0.8f, 0.805f, 0.81f), 0.18f);
             var ceiling = Material("Gallery Ceiling", new Color(0.62f, 0.625f, 0.63f), 0.25f);
             var washed = Washed("Gallery Plaster Daylit", 6f, 0f, 0.22f);
+            var mirror = MirrorPlaster("Gallery Mirror Plaster", null, 0f);
+            var mirrorDaylit = MirrorPlaster("Gallery Mirror Plaster Daylit", washed.GetTexture("_EmissionMap"), 6f * 0.3f);
             var soffitWash = Washed("Gallery Skylight Soffit", 5.2f, Height, 0.35f);
-            PlasterWalls(hall, plaster, washed);
+            PlasterWalls(hall, mirror, mirrorDaylit);
             Ceiling(root, ceiling);
             Skylight(root, soffitWash);
             Downlights(root);
-            GlassDoors(root);
+            DaytimeSky();
+            OutsideShell(root);
 
             // Soft bounced light everywhere (see HallAmbient).
             var ambient = hall.GetComponent<HallAmbient>() ?? hall.gameObject.AddComponent<HallAmbient>();
@@ -73,7 +76,9 @@ namespace GlassRoom.Editor
                     l.gameObject.SetActive(false);
         }
 
-        // Matte plaster instead of mirrors.
+        // Plaster walls that reflect the room like satin-polished stone: each is a live mirror
+        // (MirrorSurface + the Mirror Wall shader), with the skylight's daylight glow on the
+        // east wall.
         static void PlasterWalls(Transform hall, Material plaster, Material daylit)
         {
             var walls = hall.Find("Walls");
@@ -81,13 +86,30 @@ namespace GlassRoom.Editor
             foreach (Transform wall in walls)
             {
                 if (!wall.name.EndsWith(" Wall")) continue;
-                var mirror = wall.GetComponent<MirrorSurface>();
-                if (mirror != null) Object.DestroyImmediate(mirror);
+                if (wall.GetComponent<MirrorSurface>() == null) wall.gameObject.AddComponent<MirrorSurface>();
                 var r = wall.GetComponent<MeshRenderer>();
-                // The wall under the skylight carries its daylight (see Washed Plaster).
                 if (r != null) r.sharedMaterial = wall.name == "East Wall" ? daylit : plaster;
                 EditorUtility.SetDirty(wall.gameObject);
             }
+        }
+
+        static Material MirrorPlaster(string name, Texture glow, float glowStrength)
+        {
+            string path = $"{Root}/Materials/{name}.mat";
+            var shader = Shader.Find("GlassRoom/Mirror Wall");
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
+            mat.shader = shader;
+            mat.SetColor("_BaseColor", new Color(0.8f, 0.805f, 0.81f));
+            mat.SetFloat("_Smoothness", 0.6f);
+            mat.SetFloat("_Metallic", 0f);
+            mat.SetFloat("_ReflectionStrength", 0.55f);
+            mat.SetFloat("_MinReflectivity", 0.32f);
+            mat.SetFloat("_FresnelPower", 2.5f);
+            mat.SetTexture("_EmissionMap", glow);
+            mat.SetColor("_EmissionColor", glow != null ? Color.white * glowStrength : Color.black);
+            EditorUtility.SetDirty(mat);
+            return mat;
         }
 
         // A dark flat ceiling at Height everywhere except the skylight slot. Every piece runs
@@ -139,14 +161,7 @@ namespace GlassRoom.Editor
                 }, z < 0 ? Vector3.forward : Vector3.back);
                 Place(cap, slot, slotMat);
             }
-            // The sky seen through the glass: bright overcast white, a little bluer away from the sun.
-            var skyMat = UnlitMaterial("Gallery Sky", new Color(0.88f, 0.92f, 0.98f) * 1.7f);
-            var sky = Quad("Sky", new[]
-            {
-                new Vector3(xg - e, GlassHeight, SlotStart - e), new Vector3(xw, GlassHeight, SlotStart - e),
-                new Vector3(xw, GlassHeight, SlotEnd + e), new Vector3(xg - e, GlassHeight, SlotEnd + e)
-            }, Vector3.down);
-            Place(sky, slot, skyMat, false);
+            // Open to the sky: you look straight out through the glass at the daytime sky.
             // Slim dark glazing bars across the glass, and a frame along both long edges.
             var barMat = Material("Gallery Glazing Bars", new Color(0.18f, 0.18f, 0.19f), 0.4f);
             for (float z = SlotStart; z <= SlotEnd + 0.01f; z += 1.8f)
@@ -244,36 +259,23 @@ namespace GlassRoom.Editor
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
-        // Small round recessed downlights in the dark ceiling, each throwing a soft pool of
-        // warm-white light onto the floor.
+        // Round recessed downlights in the ceiling, each throwing a pool of warm-white light.
+        // The lens and its metal ring are drawn from a smooth circle texture with mipmaps, so
+        // they stay perfectly round from any distance (a many-sided disc breaks into blocky
+        // shapes once it's only a few pixels across).
         static void Downlights(Transform root)
         {
-            var fixture = UnlitMaterial("Gallery Downlight", k_Downlight * 6f); // bright enough to glow
-            var trimMat = Material("Gallery Downlight Trim", new Color(0.55f, 0.56f, 0.58f), 0.55f);
+            var circle = CircleTexture();
+            var lens = CircleMaterial("Gallery Downlight", circle, k_Downlight * 6f);
+            var ring = CircleMaterial("Gallery Downlight Trim", circle, new Color(0.42f, 0.43f, 0.45f));
+            var mesh = CircleQuad();
             var lights = new GameObject("Downlights").transform;
             lights.SetParent(root, false);
             foreach (float x in new[] { -9f, 3f })
             for (float z = -28f; z <= 28.1f; z += 14f)
             {
-                var disc = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                disc.name = "Downlight";
-                Object.DestroyImmediate(disc.GetComponent<Collider>());
-                disc.transform.SetParent(lights, false);
-                // A big glowing lens (75 cm across) in a metal trim ring.
-                disc.transform.localPosition = new Vector3(x, Height - 0.006f, z);
-                disc.transform.localScale = new Vector3(0.75f, 0.004f, 0.75f);
-                var r = disc.GetComponent<MeshRenderer>();
-                r.sharedMaterial = fixture;
-                r.shadowCastingMode = ShadowCastingMode.Off;
-                var trim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                trim.name = "Downlight Trim";
-                Object.DestroyImmediate(trim.GetComponent<Collider>());
-                trim.transform.SetParent(lights, false);
-                trim.transform.localPosition = new Vector3(x, Height - 0.003f, z);
-                trim.transform.localScale = new Vector3(0.9f, 0.003f, 0.9f);
-                var tr = trim.GetComponent<MeshRenderer>();
-                tr.sharedMaterial = trimMat;
-                tr.shadowCastingMode = ShadowCastingMode.Off;
+                Disc("Downlight Trim", lights, mesh, ring, new Vector3(x, Height - 0.004f, z), 0.9f);
+                Disc("Downlight", lights, mesh, lens, new Vector3(x, Height - 0.008f, z), 0.75f);
                 var l = new GameObject("Downlight Light").AddComponent<Light>();
                 l.transform.SetParent(lights, false);
                 l.transform.localPosition = new Vector3(x, Height - 0.05f, z);
@@ -288,38 +290,125 @@ namespace GlassRoom.Editor
             }
         }
 
-        // Glass doors in the far (north) wall with bright daylight outside, spilling in.
-        static void GlassDoors(Transform root)
+        static void Disc(string name, Transform parent, Mesh mesh, Material mat, Vector3 at, float size)
         {
-            const float x = 6f, w = 3.4f, h = 3.3f;
-            float z = Length / 2f - 0.01f;
-            var doors = new GameObject("Glass Doors").transform;
-            doors.SetParent(root, false);
-            var outside = UnlitMaterial("Gallery Outside", new Color(0.9f, 0.93f, 0.97f) * 1.5f);
-            var glow = Quad("Outside", new[]
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = at;
+            go.transform.localScale = new Vector3(size, 1f, size);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        // A white disc with a soft, smooth edge on a clear background.
+        static Texture2D CircleTexture()
+        {
+            const int n = 256;
+            string path = $"{Root}/Textures/Round Light.png";
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+            var px = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
             {
-                new Vector3(x + w / 2f, 0f, z), new Vector3(x - w / 2f, 0f, z),
-                new Vector3(x - w / 2f, h, z), new Vector3(x + w / 2f, h, z)
-            }, Vector3.back);
-            Place(glow, doors, outside, false);
-            var frame = Material("Gallery Door Frame", new Color(0.12f, 0.12f, 0.13f), 0.45f);
-            float zf = z - 0.03f;
-            Box("Door Frame Left", doors, frame, new Vector3(x - w / 2f, h / 2f, zf), new Vector3(0.07f, h, 0.06f));
-            Box("Door Frame Right", doors, frame, new Vector3(x + w / 2f, h / 2f, zf), new Vector3(0.07f, h, 0.06f));
-            Box("Door Frame Middle", doors, frame, new Vector3(x, h / 2f, zf), new Vector3(0.05f, h, 0.06f));
-            Box("Door Frame Top", doors, frame, new Vector3(x, h, zf), new Vector3(w + 0.07f, 0.07f, 0.06f));
-            Box("Door Transom", doors, frame, new Vector3(x, 2.5f, zf), new Vector3(w, 0.04f, 0.06f));
-            var l = new GameObject("Doorway Daylight").AddComponent<Light>();
-            l.transform.SetParent(doors, false);
-            l.transform.localPosition = new Vector3(x, 2.4f, z - 0.2f);
-            l.transform.localRotation = Quaternion.Euler(28f, 180f, 0f);
-            l.type = LightType.Spot;
-            l.color = k_Daylight;
-            l.spotAngle = 95f;
-            l.innerSpotAngle = 35f;
-            l.intensity = 20f;
-            l.range = 22f;
-            l.shadows = LightShadows.None;
+                float dx = (x + 0.5f) / n * 2f - 1f, dy = (y + 0.5f) / n * 2f - 1f;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                float a = Mathf.Clamp01((0.985f - d) * n * 0.5f); // about a pixel of soft edge
+                px[y * n + x] = new Color32(255, 255, 255, (byte)(a * 255));
+            }
+            tex.SetPixels32(px);
+            tex.Apply();
+            System.IO.File.WriteAllBytes(path, tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+            AssetDatabase.ImportAsset(path);
+            var imp = (TextureImporter)AssetImporter.GetAtPath(path);
+            imp.alphaIsTransparency = true;
+            imp.mipmapEnabled = true;
+            imp.filterMode = FilterMode.Trilinear;
+            imp.wrapMode = TextureWrapMode.Clamp;
+            imp.textureCompression = TextureImporterCompression.Uncompressed;
+            imp.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        static Material CircleMaterial(string name, Texture2D circle, Color color)
+        {
+            string path = $"{Root}/Materials/{name}.mat";
+            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null || mat.shader != shader)
+            {
+                if (mat != null) AssetDatabase.DeleteAsset(path);
+                mat = new Material(shader);
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.SetTexture("_BaseMap", circle);
+            mat.SetColor("_BaseColor", color);
+            mat.SetFloat("_Surface", 1f);
+            mat.SetFloat("_Blend", 0f);
+            mat.SetFloat("_ZWrite", 0f);
+            mat.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)RenderQueue.Transparent + (name.EndsWith("Trim") ? 0 : 1);
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        // A 1×1 square facing down (seen from below), with texture coordinates.
+        static Mesh CircleQuad()
+        {
+            const string path = Root + "/Meshes/Gallery Downward Square.asset";
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (mesh != null) return mesh;
+            mesh = new Mesh { name = "Gallery Downward Square" };
+            mesh.vertices = new[] { new Vector3(-0.5f, 0f, -0.5f), new Vector3(0.5f, 0f, -0.5f), new Vector3(-0.5f, 0f, 0.5f), new Vector3(0.5f, 0f, 0.5f) };
+            mesh.uv = new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f) };
+            mesh.normals = new[] { Vector3.down, Vector3.down, Vector3.down, Vector3.down };
+            mesh.triangles = new[] { 0, 1, 2, 1, 3, 2 };
+            mesh.RecalculateBounds();
+            AssetDatabase.CreateAsset(mesh, path);
+            return mesh;
+        }
+
+        // A plain wall-coloured shell around the outside of the building's sides (not its top,
+        // so the skylight still looks out at the sky). The wall mirrors' images are drawn at
+        // reduced resolution, and at the corners where two walls meet, their edge pixels
+        // picked up whatever lay just past the walls: the bright sky, as a thin line down the
+        // corner. Now there's only wall colour there.
+        static void OutsideShell(Transform root)
+        {
+            var mat = UnlitMaterial("Gallery Outside Shell", new Color(0.42f, 0.44f, 0.47f));
+            var shell = new GameObject("Outside Shell").transform;
+            shell.SetParent(root, false);
+            const float gap = 0.6f, t = 0.2f, bottom = -6f, top = Top + 0.2f;
+            float h = top - bottom, y = (top + bottom) / 2f;
+            float w = Width + 2f * (gap + t) + 0.4f, l = Length + 2f * (gap + t) + 0.4f;
+            float ox = Width / 2f + 0.2f + gap + t / 2f, oz = Length / 2f + 0.2f + gap + t / 2f;
+            Box("Shell North", shell, mat, new Vector3(0f, y, oz), new Vector3(w, h, t));
+            Box("Shell South", shell, mat, new Vector3(0f, y, -oz), new Vector3(w, h, t));
+            Box("Shell East", shell, mat, new Vector3(ox, y, 0f), new Vector3(t, h, l));
+            Box("Shell West", shell, mat, new Vector3(-ox, y, 0f), new Vector3(t, h, l));
+            foreach (var r in shell.GetComponentsInChildren<MeshRenderer>())
+                r.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        // Outside it's daytime: a real sky photo (Textures/Daytime Sky.jpg, Poly Haven, CC0)
+        // all round, seen through the skylight's glass.
+        static void DaytimeSky()
+        {
+            string path = $"{Root}/Materials/Daytime Sky.mat";
+            var shader = Shader.Find("Skybox/Panoramic");
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
+            mat.shader = shader;
+            mat.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>($"{Root}/Textures/Daytime Sky.jpg"));
+            mat.SetFloat("_Exposure", 1.15f);
+            mat.SetFloat("_Rotation", 40f);
+            EditorUtility.SetDirty(mat);
+            RenderSettings.skybox = mat;
         }
 
         // A slightly cool, subdued grade like the reference.

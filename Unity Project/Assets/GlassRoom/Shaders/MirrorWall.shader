@@ -11,6 +11,8 @@ Shader "GlassRoom/Mirror Wall"
         _ReflectionStrength("Reflection Strength", Range(0, 1)) = 0.55
         _MinReflectivity("Reflectivity Facing Straight On", Range(0, 1)) = 0.38
         _FresnelPower("Fresnel Power", Range(1, 8)) = 2.5
+        [NoScaleOffset] _EmissionMap("Glow (e.g. daylight from a skylight)", 2D) = "black" {}
+        [HDR] _EmissionColor("Glow Colour", Color) = (0, 0, 0, 1)
     }
 
     SubShader
@@ -50,7 +52,10 @@ Shader "GlassRoom/Mirror Wall"
                 half _ReflectionStrength;
                 half _MinReflectivity;
                 half _FresnelPower;
+                half4 _EmissionColor;
             CBUFFER_END
+            TEXTURE2D(_EmissionMap);
+            SAMPLER(sampler_EmissionMap);
 
             TEXTURE2D(_MirrorTex);
             SAMPLER(sampler_MirrorTex);
@@ -61,6 +66,7 @@ Shader "GlassRoom/Mirror Wall"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                float2 uv : TEXCOORD0;
             };
 
             struct Varyings
@@ -69,6 +75,7 @@ Shader "GlassRoom/Mirror Wall"
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
                 half fogFactor : TEXCOORD2;
+                float2 uv : TEXCOORD3;
             };
 
             Varyings Vert(Attributes input)
@@ -79,6 +86,7 @@ Shader "GlassRoom/Mirror Wall"
                 output.positionWS = positions.positionWS;
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 output.fogFactor = ComputeFogFactor(positions.positionCS.z);
+                output.uv = input.uv;
                 return output;
             }
 
@@ -123,6 +131,8 @@ Shader "GlassRoom/Mirror Wall"
                 // The wall keeps most of its own white; the reflection is laid gently on top, so
                 // dark parts of the reflected room never make the wall look smoky.
                 color.rgb = color.rgb * (1 - amount * 0.25) + reflection * amount * 0.75;
+                // Its own glow on top (daylight from the skylight on the east wall).
+                color.rgb += SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, input.uv).rgb * _EmissionColor.rgb;
 
                 color.rgb = MixFog(color.rgb, input.fogFactor);
                 return half4(color.rgb, 1);

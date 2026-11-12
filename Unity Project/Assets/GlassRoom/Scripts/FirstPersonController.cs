@@ -335,15 +335,21 @@ namespace GlassRoom
             Vector3 horizontal = new Vector3(m_Velocity.x, 0f, m_Velocity.z);
             horizontal = Vector3.Lerp(horizontal, target, 1f - Mathf.Exp(-acceleration * dt));
 
-            // Standing on something steeper than you can stand on (like the side of the lamp
-            // shade) doesn't count as ground: you slide off it, and can't jump from it.
-            bool steep = m_Controller.isGrounded && Vector3.Angle(m_GroundNormal, Vector3.up) > m_Controller.slopeLimit + 1f;
+            // Perched on something nearly vertical (like the side of the lamp shade), you can't
+            // stand there: you're eased off it, outward, at an easy pace, and fall. Only for really
+            // steep surfaces, and it never builds up speed (it just makes sure you're moving
+            // outward at least that fast).
+            bool steep = m_Controller.isGrounded && Vector3.Angle(m_GroundNormal, Vector3.up) > SteepAngle;
             bool grounded = m_Controller.isGrounded && !steep;
             if (steep)
             {
                 var away = new Vector3(m_GroundNormal.x, 0f, m_GroundNormal.z);
-                if (away.sqrMagnitude < 0.0001f) away = -transform.forward;
-                horizontal += away.normalized * SlideSpeed;
+                if (away.sqrMagnitude > 0.0001f)
+                {
+                    away.Normalize();
+                    float outward = Vector3.Dot(horizontal, away);
+                    if (outward < SlideSpeed) horizontal += away * (SlideSpeed - outward);
+                }
             }
             float vertical = grounded ? -2f : Mathf.Min(m_Velocity.y, steep ? 0f : m_Velocity.y) - gravity * dt;
             m_GroundedTime = grounded ? m_GroundedTime + dt : 0f;
@@ -360,7 +366,7 @@ namespace GlassRoom
 
         // The surface under your feet, from the last move (see ApplyMove).
         Vector3 m_GroundNormal = Vector3.up;
-        const float SlideSpeed = 4f;
+        const float SlideSpeed = 1.2f, SteepAngle = 70f;
 
         void OnControllerColliderHit(ControllerColliderHit hit)
         {

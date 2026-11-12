@@ -326,9 +326,9 @@ namespace GlassRoom.Editor
             var bulbAt = new Vector3(0f, 1.6f, 0f);
             float down = 2f * Mathf.Atan2(0.24f, 1.6f - 1.47f) * Mathf.Rad2Deg;   // bottom opening
             float up = 2f * Mathf.Atan2(0.205f, 1.79f - 1.6f) * Mathf.Rad2Deg;    // top opening
-            LampLight("Floor Glow", lamp, bulbAt, Quaternion.Euler(90f, 0f, 0f), LightType.Spot, amber, 5f, 5.5f, down);
-            LampLight("Ceiling Glow", lamp, bulbAt, Quaternion.Euler(-90f, 0f, 0f), LightType.Spot, amber, 3f, 7.5f, up);
-            LampLight("Light", lamp, bulbAt, Quaternion.identity, LightType.Point, amber, 0.9f, 4f, 0f);
+            LampLight("Floor Glow", lamp, bulbAt, Quaternion.Euler(90f, 0f, 0f), LightType.Spot, amber, 7f, 6f, down);
+            LampLight("Ceiling Glow", lamp, bulbAt, Quaternion.Euler(-90f, 0f, 0f), LightType.Spot, amber, 4.5f, 8f, up);
+            LampLight("Light", lamp, bulbAt, Quaternion.identity, LightType.Point, amber, 1.5f, 5f, 0f);
             EditorUtility.SetDirty(lamp.gameObject);
         }
 
@@ -358,7 +358,8 @@ namespace GlassRoom.Editor
                 ni.textureType = TextureImporterType.NormalMap;
                 ni.SaveAndReimport();
             }
-            var mat = SimpleMaterial("Lamp Shade Linen", new Color(1f, 0.95f, 0.87f), 0.15f, 0f, new Color(1f, 0.58f, 0.24f) * 1.1f);
+            // Lit from inside, the linen glows a warm amber (the weave shows through the glow).
+            var mat = SimpleMaterial("Lamp Shade Linen", new Color(1f, 0.6f, 0.28f), 0.15f, 0f, new Color(1f, 0.36f, 0.07f) * 1.3f);
             var baseMap = AssetDatabase.LoadAssetAtPath<Texture2D>(tex);
             mat.SetTexture("_BaseMap", baseMap);
             mat.SetTextureScale("_BaseMap", new Vector2(3f, 1f));
