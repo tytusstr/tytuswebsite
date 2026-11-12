@@ -114,6 +114,8 @@ namespace GlassRoom.Editor
 
             MakeMirrorWalls(hall.transform);
             FixFloorJoins(hall.transform);
+            FloorMaterial();
+            AddBaseboards(hall.transform);
             var ring = hall.transform.Find("Ring Light");
             if (ring != null)
             {
@@ -253,17 +255,46 @@ namespace GlassRoom.Editor
             }
         }
 
-        // The ring of lights in the middle is the main light, strong enough to light the whole
-        // hall. Fill lights spread it across the middle part of the hall only, so the far ends
-        // and corners are the only parts that start to get darker. The cozy corner keeps its
-        // lamp, in a warm amber.
-        const float RingLightRange = 46f, RingLightIntensity = 5f;
-        static readonly float[] k_FillZ = { -16f, 0f, 16f };
-        const float FillX = 9f, FillRange = 26f, FillIntensity = 1.5f;
-        static readonly Color k_AmbientSky = new Color(0.52f, 0.53f, 0.55f);
-        static readonly Color k_AmbientEquator = new Color(0.47f, 0.48f, 0.5f);
-        static readonly Color k_AmbientGround = new Color(0.36f, 0.37f, 0.38f);
-        static readonly Color k_LampAmber = new Color(1f, 0.6f, 0.27f);
+        // A slim black skirting board along the bottom of every wall, like a real room: it
+        // covers the line where wall meets floor, so no gap or seam can ever show there.
+        const float BaseboardHeight = 0.09f, BaseboardDepth = 0.03f;
+        static void AddBaseboards(Transform hall)
+        {
+            var old = hall.Find("Baseboards");
+            if (old != null) Object.DestroyImmediate(old.gameObject);
+            var root = new GameObject("Baseboards").transform;
+            root.SetParent(hall, false);
+            var mat = LitMaterial("Baseboard", new Color(0.03f, 0.03f, 0.032f), 0.82f, 0f);
+            void Strip(string name, Vector3 centre, Vector3 size)
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                go.name = name;
+                Object.DestroyImmediate(go.GetComponent<Collider>());
+                go.transform.SetParent(root, false);
+                go.transform.localPosition = centre;
+                go.transform.localScale = size;
+                var r = go.GetComponent<MeshRenderer>();
+                r.sharedMaterial = mat;
+                r.shadowCastingMode = ShadowCastingMode.Off;
+                GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.ContributeGI | StaticEditorFlags.BatchingStatic);
+            }
+            float y = BaseboardHeight / 2f - 0.01f; // a centimetre into the floor
+            float h = BaseboardHeight + 0.01f;
+            // Centred on each wall's inside face, so half its depth stands out into the room.
+            Strip("North Baseboard", new Vector3(0f, y, Length / 2f), new Vector3(Width, h, BaseboardDepth));
+            Strip("South Baseboard", new Vector3(0f, y, -Length / 2f), new Vector3(Width, h, BaseboardDepth));
+            Strip("East Baseboard", new Vector3(Width / 2f, y, 0f), new Vector3(BaseboardDepth, h, Length));
+            Strip("West Baseboard", new Vector3(-Width / 2f, y, 0f), new Vector3(BaseboardDepth, h, Length));
+        }
+
+        // All the hall's light comes from the ring in the middle: bright under it, fading out
+        // across the hall so it barely reaches the corners, which stay dim. No fill lights, and
+        // only a little ambient so nothing is pitch black. The cozy corner keeps its lamp.
+        const float RingLightRange = 75f, RingLightIntensity = 22f;
+        const float RingLightBelowCeiling = 2.3f;
+        static readonly Color k_AmbientSky = new Color(0.16f, 0.165f, 0.18f);
+        static readonly Color k_AmbientEquator = new Color(0.13f, 0.135f, 0.15f);
+        static readonly Color k_AmbientGround = new Color(0.08f, 0.08f, 0.085f);
 
         static void TuneLighting()
         {
@@ -271,30 +302,31 @@ namespace GlassRoom.Editor
             {
                 if (l.name.StartsWith("Fill "))
                 {
-                    // Six fills: left and right of the middle, and a little toward each end.
-                    var fills = new List<Light>();
-                    foreach (Transform sibling in l.transform.parent)
-                        if (sibling.name.StartsWith("Fill ")) fills.Add(sibling.GetComponent<Light>());
-                    int k = fills.IndexOf(l);
-                    if (k < 0 || k >= 6) { l.enabled = false; EditorUtility.SetDirty(l); continue; }
-                    l.transform.position = new Vector3(k % 2 == 0 ? -FillX : FillX, Height * 0.5f, k_FillZ[k / 2]);
-                    l.range = FillRange;
-                    l.intensity = FillIntensity;
-                    l.enabled = true;
-                    EditorUtility.SetDirty(l.transform);
+                    l.enabled = false;
                 }
-                else if (l.name == "Light" && l.transform.parent != null && l.transform.parent.name.Contains("Lamp"))
+                else if (l.name == "Moonlight")
                 {
-                    l.color = k_LampAmber;
-                    l.intensity = 2.2f;
+                    // Meant to light only the trains in the sky, but the renderer (Forward+)
+                    // ignores a light's culling mask, so it lit one side of the hall and left
+                    // the other wall darker. The trains glow faintly on their own instead.
+                    l.enabled = false;
+                    var trainBody = AssetDatabase.LoadAssetAtPath<Material>(Root + "/Materials/Train Body.mat");
+                    if (trainBody != null)
+                    {
+                        trainBody.EnableKeyword("_EMISSION");
+                        trainBody.SetColor("_EmissionColor", new Color(0.07f, 0.075f, 0.09f));
+                        EditorUtility.SetDirty(trainBody);
+                    }
                 }
                 else if (l.name.StartsWith("Ring Light "))
                 {
+                    // Glowing all round (not just down) so the ceiling and walls around the
+                    // middle are lit too, hung a little below the ring.
+                    l.type = LightType.Point;
                     l.range = RingLightRange;
                     l.intensity = RingLightIntensity;
-                    // Hung clear of the ring itself (see the ring above).
                     var lp = l.transform.position;
-                    l.transform.position = new Vector3(lp.x, Height - 0.12f, lp.z);
+                    l.transform.position = new Vector3(lp.x, Height - RingLightBelowCeiling, lp.z);
                     EditorUtility.SetDirty(l.transform);
                 }
                 else continue;
@@ -450,17 +482,37 @@ namespace GlassRoom.Editor
             return mat;
         }
 
+        // Polished black marble (Textures/Black Marble *, ambientCG Marble006, CC0) with the
+        // live mirror reflection on top.
         static Material FloorMaterial()
         {
             var mat = LoadOrCreate("Floor Glass", Shader.Find("GlassRoom/Planar Glass Floor"));
-            mat.SetColor("_BaseColor", new Color(0.86f, 0.87f, 0.88f));
-            mat.SetFloat("_Smoothness", 0.97f);
+            mat.SetColor("_BaseColor", Color.white);
+            mat.SetFloat("_Smoothness", 0.96f);
             mat.SetFloat("_Metallic", 0f);
-            mat.SetFloat("_ReflectionStrength", 0.9f);
-            mat.SetFloat("_MinReflectivity", 0.45f);
+            mat.SetFloat("_ReflectionStrength", 0.85f);
+            mat.SetFloat("_MinReflectivity", 0.32f);
             mat.SetFloat("_FresnelPower", 4f);
+            mat.SetFloat("_TileSize", 3f);
+            mat.SetFloat("_BumpScale", 0.35f);
+            mat.SetFloat("_RippleStrength", 0.004f);
+            string dir = Root + "/Textures/";
+            mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Black Marble Color.jpg"));
+            mat.SetTexture("_BumpMap", ImportAsNormalMap(dir + "Black Marble Normal.jpg"));
+            mat.SetTexture("_RoughnessMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + "Black Marble Roughness.jpg"));
             EditorUtility.SetDirty(mat);
             return mat;
+        }
+
+        static Texture2D ImportAsNormalMap(string path)
+        {
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer != null && importer.textureType != TextureImporterType.NormalMap)
+            {
+                importer.textureType = TextureImporterType.NormalMap;
+                importer.SaveAndReimport();
+            }
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
         static Material SkyMaterial()

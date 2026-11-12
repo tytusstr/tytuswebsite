@@ -1,4 +1,4 @@
-// Polished glass floor: URP lighting plus a sharp mirror reflection rendered by PlanarReflection.
+// Polished floor (black marble, Textures/Black Marble *): URP lighting plus a sharp mirror reflection rendered by PlanarReflection.
 Shader "GlassRoom/Planar Glass Floor"
 {
     Properties
@@ -9,6 +9,12 @@ Shader "GlassRoom/Planar Glass Floor"
         _ReflectionStrength("Reflection Strength", Range(0, 1)) = 0.9
         _MinReflectivity("Reflectivity Facing Down", Range(0, 1)) = 0.45
         _FresnelPower("Fresnel Power", Range(1, 8)) = 4
+        [NoScaleOffset] _BaseMap("Surface (e.g. marble)", 2D) = "white" {}
+        [NoScaleOffset][Normal] _BumpMap("Normal Map", 2D) = "bump" {}
+        [NoScaleOffset] _RoughnessMap("Roughness Map", 2D) = "black" {}
+        _TileSize("Texture Tile Size (m)", Float) = 3
+        _BumpScale("Normal Strength", Range(0, 2)) = 0.4
+        _RippleStrength("Reflection Ripple", Range(0, 0.05)) = 0.006
     }
 
     SubShader
@@ -47,7 +53,14 @@ Shader "GlassRoom/Planar Glass Floor"
                 half _ReflectionStrength;
                 half _MinReflectivity;
                 half _FresnelPower;
+                float _TileSize;
+                half _BumpScale;
+                half _RippleStrength;
             CBUFFER_END
+
+            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
+            TEXTURE2D(_RoughnessMap); SAMPLER(sampler_RoughnessMap);
 
             TEXTURE2D(_PlanarReflectionTex);
             SAMPLER(sampler_PlanarReflectionTex);
@@ -83,7 +96,16 @@ Shader "GlassRoom/Planar Glass Floor"
                 InputData inputData = (InputData)0;
                 inputData.positionWS = input.positionWS;
                 inputData.positionCS = input.positionCS;
-                inputData.normalWS = normalize(input.normalWS);
+                // The surface texture is laid across the floor in world space, one tile every
+                // _TileSize metres, so it never stretches however big the floor is.
+                float2 uv = input.positionWS.xz / max(_TileSize, 0.01);
+                half3 marble = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).rgb;
+                half3 bump = UnpackNormalScale(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
+                half roughness = SAMPLE_TEXTURE2D(_RoughnessMap, sampler_RoughnessMap, uv).r;
+                // The floor faces straight up: texture x runs along world x, texture y along world z.
+                half3 n = normalize(input.normalWS);
+                half3 bumped = normalize(half3(bump.x, bump.z, bump.y));
+                inputData.normalWS = n.y > 0.5 ? bumped : n;
                 inputData.viewDirectionWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
                 inputData.shadowCoord = TransformWorldToShadowCoord(input.positionWS);
                 inputData.fogCoord = input.fogFactor;
@@ -92,20 +114,23 @@ Shader "GlassRoom/Planar Glass Floor"
                 inputData.shadowMask = half4(1, 1, 1, 1);
 
                 SurfaceData surface = (SurfaceData)0;
-                surface.albedo = _BaseColor.rgb;
+                surface.albedo = _BaseColor.rgb * marble;
                 surface.metallic = _Metallic;
-                surface.smoothness = _Smoothness;
+                surface.smoothness = saturate(_Smoothness - roughness * 0.5);
                 surface.occlusion = 1;
                 surface.alpha = 1;
 
                 half4 color = UniversalFragmentPBR(inputData, surface);
 
                 // The reflection camera's image is mirrored left-to-right; flip it back.
-                float2 reflectionUV = float2(1 - inputData.normalizedScreenSpaceUV.x, inputData.normalizedScreenSpaceUV.y);
+                // Tiny unevenness in the polished stone ripples the reflection a little.
+                float2 reflectionUV = float2(1 - inputData.normalizedScreenSpaceUV.x, inputData.normalizedScreenSpaceUV.y)
+                                    + bump.xy * _RippleStrength;
                 half3 reflection = SAMPLE_TEXTURE2D(_PlanarReflectionTex, sampler_PlanarReflectionTex, reflectionUV).rgb;
                 half facing = saturate(dot(inputData.normalWS, inputData.viewDirectionWS));
                 half fresnel = _MinReflectivity + (1 - _MinReflectivity) * pow(1 - facing, _FresnelPower);
-                half amount = fresnel * _ReflectionStrength * _PlanarReflectionWeight;
+                // Rougher patches of the stone reflect a little less.
+                half amount = fresnel * _ReflectionStrength * _PlanarReflectionWeight * (1 - roughness * 0.6);
                 color.rgb = color.rgb * (1 - amount * 0.7) + reflection * amount;
 
                 color.rgb = MixFog(color.rgb, input.fogFactor);

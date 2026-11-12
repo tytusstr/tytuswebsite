@@ -32,12 +32,10 @@
     #label .ch.scrambling { color: rgba(255,255,255,0.55); }
     #label .ch.red { color: #ff2d3a; }
     #label::before, #label::after { content: attr(data-text); position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-    #label::before { color: #ff2d3a; transform: translate(-5px, 0); }
-    #label::after { color: #18e8ff; transform: translate(5px, 0); }
-    #enter.glitch #label::before { opacity: 1; animation: slice-a 0.16s steps(1) infinite; }
-    #enter.glitch #label::after { opacity: 1; animation: slice-b 0.13s steps(1) infinite; }
-    #enter.glitch #label { animation: shake 0.18s steps(1) infinite, flash 0.5s steps(1) infinite; }
-    #enter.glitch { animation: jolt 0.24s steps(1) infinite; }
+    #label::before { color: #ff2d3a; transform: translate(-2px, 0); }
+    #label::after { color: #18e8ff; transform: translate(2px, 0); }
+    #enter.glitch #label::before { opacity: 0.8; animation: slice-a 0.32s steps(1) infinite; }
+    #enter.glitch #label::after { opacity: 0.8; animation: slice-b 0.28s steps(1) infinite; }
     @keyframes slice-a {
       0% { clip-path: inset(12% 0 70% 0); } 14% { clip-path: inset(62% 0 8% 0); } 28% { clip-path: inset(38% 0 44% 0); }
       42% { clip-path: inset(80% 0 2% 0); } 57% { clip-path: inset(4% 0 82% 0); } 71% { clip-path: inset(50% 0 30% 0); }
@@ -46,10 +44,7 @@
       0% { clip-path: inset(66% 0 16% 0); } 16% { clip-path: inset(8% 0 76% 0); } 33% { clip-path: inset(44% 0 36% 0); }
       50% { clip-path: inset(86% 0 4% 0); } 66% { clip-path: inset(20% 0 62% 0); } 83% { clip-path: inset(54% 0 26% 0); }
       100% { clip-path: inset(2% 0 88% 0); } }
-    @keyframes shake { 0% { transform: none; } 20% { transform: translate(-3px, 1px) skewX(-8deg); } 40% { transform: translate(3px, -2px); } 60% { transform: translate(-2px, 2px) skewX(10deg); } 80% { transform: translate(2px, 0) scaleX(1.08); } }
-    @keyframes flash { 0% { color: inherit; } 30% { color: #ff2d3a; } 45% { color: #fff; } 70% { color: #18e8ff; } 80% { color: inherit; } }
-    @keyframes jolt { 0% { transform: none; } 33% { transform: translate(-2px, 1px); } 66% { transform: translate(2px, -1px); } }
-    @media (prefers-reduced-motion: reduce) { #enter.glitch #label, #enter.glitch #label::before, #enter.glitch #label::after { animation: none; opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { #enter.glitch #label::before, #enter.glitch #label::after { animation: none; opacity: 0; } }
     #loading.ready #bar { opacity: 0; pointer-events: none; }
     #loading.ready #enter { opacity: 1; pointer-events: auto; transform: none; }
   </style>
@@ -99,6 +94,18 @@
     var enter = document.getElementById("enter");
     var ready = false, entered = false;
     window.gameCovered = true; // read by the game (see WebPage.jslib)
+    // Until Enter is pressed nothing reaches the game: no keys, clicks, touches or wheel. These
+    // listeners are added before the game loads, so they run before any of the game's own.
+    ["keydown", "keyup", "keypress", "mousedown", "mouseup", "mousemove", "click", "dblclick", "contextmenu",
+     "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "pointerdown", "pointerup", "pointermove"].forEach(function (type) {
+      window.addEventListener(type, function (e) {
+        if (entered) return;
+        // The Enter button itself, and the Enter / Space keys that press it, still work.
+        if (e.target && e.target.closest && e.target.closest("#enter")) return;
+        if (type === "keydown" && (e.key === "Enter" || e.key === " ")) { e.stopImmediatePropagation(); if (ready) { e.preventDefault(); enterGame(); } return; }
+        e.stopImmediatePropagation();
+      }, { capture: true, passive: false });
+    });
     window.hideLoading = function () {
       if (ready) return;
       ready = true;
@@ -106,9 +113,9 @@
       decode();
     };
 
-    // Scramble and reveal, after the baffle.js library: every 50 ms each hidden letter shows a
-    // new random digit (jittering up or down, sometimes flashing red), and letters are revealed
-    // one by one at a steady pace until the word stands. Then short glitch bursts now and then.
+    // Scramble and reveal, after the baffle.js library: every 60 ms each hidden letter shows a
+    // new random digit (now and then in red), and letters are revealed one by one at a steady
+    // pace until the word stands. Then a brief, subtle glitch every few seconds.
     var label = document.getElementById("label");
     var WORD = "ENTER", DIGITS = "0123456789";
     var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -133,12 +140,10 @@
       chars.forEach(function (span, i) {
         if (hidden[i]) {
           span.textContent = DIGITS[Math.floor(Math.random() * DIGITS.length)];
-          span.className = "ch scrambling" + (Math.random() < 0.12 ? " red" : "");
-          span.style.transform = "translateY(" + (Math.round(Math.random() * 6) - 3) + "px)";
+          span.className = "ch scrambling" + (Math.random() < 0.06 ? " red" : "");
         } else {
           span.textContent = WORD[i];
           span.className = "ch";
-          span.style.transform = "none";
         }
         shown += span.textContent;
       });
@@ -148,7 +153,7 @@
     // Rolls numbers for `hold` ms, then reveals one letter every `step` ms in random order.
     function decode(hold, step) {
       if (reduceMotion) return;
-      hold = hold || 1800; step = step || 170;
+      hold = hold || 900; step = step || 130;
       var hidden = WORD.split("").map(function () { return true; });
       var order = WORD.split("").map(function (_, i) { return i; }).sort(function () { return Math.random() - 0.5; });
       var started = performance.now();
@@ -159,10 +164,10 @@
         scrambleFrame(hidden);
         if (revealed >= order.length) {
           clearInterval(decode.timer);
-          glitch(650);
+          glitch(260);
           scheduleBursts();
         }
-      }, 50);
+      }, 60);
     }
 
     // Every few seconds a quick glitch, sometimes with a couple of letters re-rolling.
@@ -170,17 +175,17 @@
       clearTimeout(scheduleBursts.timer);
       scheduleBursts.timer = setTimeout(function () {
         if (entered) return;
-        glitch(350 + Math.random() * 400);
-        if (Math.random() < 0.85) {
-          var hidden = WORD.split("").map(function () { return Math.random() < 0.6; });
-          scrambleFrame(hidden);
-          setTimeout(function () { scrambleFrame(WORD.split("").map(function () { return Math.random() < 0.3; })); }, 120);
-          setTimeout(function () { scrambleFrame(WORD.split("").map(function () { return false; })); }, 260);
+        glitch(160 + Math.random() * 160);
+        if (Math.random() < 0.35) {
+          // One letter briefly turns back into a number.
+          var one = Math.floor(Math.random() * WORD.length);
+          scrambleFrame(WORD.split("").map(function (_, i) { return i === one; }));
+          setTimeout(function () { scrambleFrame(WORD.split("").map(function () { return false; })); }, 140);
         }
         scheduleBursts();
-      }, 900 + Math.random() * 1500);
+      }, 2600 + Math.random() * 2600);
     }
-    enter.addEventListener("mouseenter", function () { glitch(300); });
+    enter.addEventListener("mouseenter", function () { glitch(180); });
     // Capturing the mouse pointer (for looking around in computer mode) is only allowed by
     // browsers during a click or key press, so the page asks right inside those events: the
     // Enter click, clicks on the game, and Q when it closes the menu. The game reports what it
@@ -211,9 +216,6 @@
       canvas.focus({ preventScroll: true });
     }
     enter.addEventListener("click", enterGame);
-    window.addEventListener("keydown", function (e) {
-      if (ready && !entered && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); enterGame(); }
-    });
     var backupTimer = null;
     var script = document.createElement("script");
     script.src = "Build/WebBuild.loader.js";

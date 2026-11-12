@@ -276,7 +276,7 @@ namespace GlassRoom.Editor
         {
             var lamp = nook.Find("Floor Lamp");
             if (lamp == null) return;
-            foreach (var name in new[] { "Base", "Pole", "Shade", "Light", "Lamp Parts" })
+            foreach (var name in new[] { "Base", "Pole", "Shade", "Light", "Lamp Parts", "Floor Glow", "Ceiling Glow" })
             {
                 var old = lamp.Find(name);
                 while (old != null) { Object.DestroyImmediate(old.gameObject); old = lamp.Find(name); }
@@ -314,35 +314,40 @@ namespace GlassRoom.Editor
             {
                 new Vector2(0.205f, 1.79f), new Vector2(0.24f, 1.47f)
             }, 64, true);
-            // Thin brass rims at the shade's top and bottom edges, and a finial.
+            // Thin brass rims at the shade's top and bottom edges.
             LatheObject("Shade Rim Top", parts, brass, new[] { new Vector2(0.207f, 1.795f), new Vector2(0.207f, 1.785f) }, 64, true);
             LatheObject("Shade Rim Bottom", parts, brass, new[] { new Vector2(0.242f, 1.475f), new Vector2(0.242f, 1.465f) }, 64, true);
-            var finial = Primitive(PrimitiveType.Sphere, "Finial", parts, brass);
-            finial.transform.localPosition = new Vector3(0f, 1.8f, 0f);
-            finial.transform.localScale = Vector3.one * 0.025f;
 
-            // Light: the warm bulb glow, and a soft pool of light on the floor beneath the shade.
-            var amber = new Color(1f, 0.6f, 0.27f);
-            var glow = new GameObject("Light").AddComponent<Light>();
-            glow.transform.SetParent(lamp, false);
-            glow.transform.localPosition = new Vector3(0f, 1.6f, 0f);
-            glow.type = LightType.Point;
-            glow.color = amber;
-            glow.intensity = 2.2f;
-            glow.range = 6.5f;
-            glow.shadows = LightShadows.None;
-            var pool = new GameObject("Floor Glow").AddComponent<Light>();
-            pool.transform.SetParent(lamp, false);
-            pool.transform.localPosition = new Vector3(0f, 1.52f, 0f);
-            pool.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            pool.type = LightType.Spot;
-            pool.color = amber;
-            pool.spotAngle = 120f;
-            pool.innerSpotAngle = 55f;
-            pool.intensity = 3f;
-            pool.range = 4f;
-            pool.shadows = LightShadows.None;
+            // Light, all from the bulb, the way a shaded lamp really lights a room: a bright warm
+            // pool spilling out of the open bottom of the shade, a softer cone thrown up out of
+            // the open top, and only a dim glow through the linen itself (the shade blocks most
+            // of the light sideways). Each cone's width is set by the shade's opening.
+            var amber = new Color(1f, 0.62f, 0.3f);
+            var bulbAt = new Vector3(0f, 1.6f, 0f);
+            float down = 2f * Mathf.Atan2(0.24f, 1.6f - 1.47f) * Mathf.Rad2Deg;   // bottom opening
+            float up = 2f * Mathf.Atan2(0.205f, 1.79f - 1.6f) * Mathf.Rad2Deg;    // top opening
+            LampLight("Floor Glow", lamp, bulbAt, Quaternion.Euler(90f, 0f, 0f), LightType.Spot, amber, 5f, 5.5f, down);
+            LampLight("Ceiling Glow", lamp, bulbAt, Quaternion.Euler(-90f, 0f, 0f), LightType.Spot, amber, 3f, 7.5f, up);
+            LampLight("Light", lamp, bulbAt, Quaternion.identity, LightType.Point, amber, 0.9f, 4f, 0f);
             EditorUtility.SetDirty(lamp.gameObject);
+        }
+
+        static void LampLight(string name, Transform lamp, Vector3 at, Quaternion rotation, LightType type, Color color, float intensity, float range, float angle)
+        {
+            var l = new GameObject(name).AddComponent<Light>();
+            l.transform.SetParent(lamp, false);
+            l.transform.localPosition = at;
+            l.transform.localRotation = rotation;
+            l.type = type;
+            l.color = color;
+            l.intensity = intensity;
+            l.range = range;
+            if (type == LightType.Spot)
+            {
+                l.spotAngle = angle;
+                l.innerSpotAngle = angle * 0.55f; // soft edge where the shade's rim cuts it off
+            }
+            l.shadows = LightShadows.None;
         }
 
         static Material LinenShadeMaterial()
@@ -475,14 +480,18 @@ namespace GlassRoom.Editor
             foreach (string guid in AssetDatabase.FindAssets("t:AudioClip", new[] { "Assets/GlassRoom/Audio/Blood" }))
                 clips.Add(AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid)));
             tracks.squelchClips = clips.ToArray();
-            // Transparent, unlit: prints are dark red at whatever strength each one has.
+            // Transparent, lit and glossy like the rest of the blood: prints are wet red at
+            // whatever strength each one has, and lit by the room (not glowing in the dark).
             string path = "Assets/GlassRoom/Materials/Blood Print.mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null)
             {
-                mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
                 AssetDatabase.CreateAsset(mat, path);
             }
+            mat.shader = Shader.Find("Universal Render Pipeline/Lit");
+            mat.SetFloat("_Smoothness", 0.86f);
+            mat.SetFloat("_Metallic", 0f);
             mat.SetFloat("_Surface", 1f);
             mat.SetFloat("_Blend", 0f);
             mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
@@ -491,9 +500,11 @@ namespace GlassRoom.Editor
             mat.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             mat.SetFloat("_ZWrite", 0f);
             mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            mat.SetFloat("_BlendModePreserveSpecular", 0f);
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 10;
             mat.SetOverrideTag("RenderType", "Transparent");
-            mat.SetColor("_BaseColor", new Color(0.3f, 0.015f, 0.025f, 0.85f));
+            mat.SetColor("_BaseColor", new Color(0.46f, 0.02f, 0.03f, 0.85f));
             EditorUtility.SetDirty(mat);
             tracks.printMaterial = mat;
             EditorUtility.SetDirty(tracks);
@@ -511,9 +522,13 @@ namespace GlassRoom.Editor
         }
 
         /// <summary>
-        /// A crime scene in the far corner (diagonally opposite the cozy corner): a figure lying
-        /// face down, one arm flung out, in a glossy pool of blood with a few drips around it.
-        /// Built once; left alone after that.
+        /// A murder scene in the far corner (diagonally opposite the cozy corner): a man lying
+        /// face down where he fell, head turned, one arm flung past his head, one knee bent out,
+        /// in a wet pool of blood that has spread from under his head and chest, with a smear
+        /// where he was dragged, spray across the floor and spatter running down the wall.
+        /// The body is a real character model (Models/Victim, Microsoft Rocketbox, MIT) posed with
+        /// its own skeleton (VictimPose). The blood uses recoloured CC0 stain and spatter
+        /// textures (Textures/Blood) on wet, glossy decals. Lit only by the hall itself.
         /// </summary>
         public static void AddCrimeScene(Transform hall, Vector3 corner)
         {
@@ -523,99 +538,38 @@ namespace GlassRoom.Editor
             root.position = corner;
             root.rotation = Quaternion.Euler(0f, 32f, 0f);
 
-            var skin = SimpleMaterial("Body Skin", new Color(0.74f, 0.55f, 0.46f), 0.35f, 0f);
-            var hair = SimpleMaterial("Body Hair", new Color(0.07f, 0.05f, 0.04f), 0.3f, 0f);
-            var hoodie = SimpleMaterial("Body Hoodie", new Color(0.17f, 0.19f, 0.22f), 0.15f, 0f);
-            var jeans = SimpleMaterial("Body Jeans", new Color(0.09f, 0.12f, 0.19f), 0.2f, 0f);
-            var shoes = SimpleMaterial("Body Shoes", new Color(0.04f, 0.04f, 0.045f), 0.45f, 0f);
-            var blood = SimpleMaterial("Blood", new Color(0.4f, 0.012f, 0.02f), 0.82f, 0f);
+            // Blood on the floor, drawn in order (spray under pools, pools under the smear) so
+            // overlapping decals never flicker against each other.
+            BloodDecal("Blood Spray", root, "spray_floor", new Vector3(0.2f, 0.0022f, 0.55f), 15f, new Vector2(3.2f, 3.2f), 0.85f, 0);
+            BloodDecal("Blood Pool", root, "pool1", new Vector3(0.1f, 0.0026f, 0.55f), 0f, new Vector2(2.1f, 2.1f), 0.94f, 1);
+            BloodDecal("Blood Pool 2", root, "pool2", new Vector3(-0.15f, 0.003f, -0.35f), 70f, new Vector2(1.5f, 1.5f), 0.94f, 2);
+            BloodDecal("Blood Smear", root, "smear", new Vector3(0.75f, 0.0034f, -0.4f), 105f, new Vector2(1.3f, 1.3f), 0.9f, 3);
+            BloodDecal("Blood Trail", root, "smear", new Vector3(1.05f, 0.0036f, -1.9f), 200f, new Vector2(1.1f, 2.6f), 0.88f, 4);
 
-            // Blood first, flat on the floor: one large irregular pool under the head and chest,
-            // and a few drips.
-            MeshPart("Blood Pool", root, BloodMesh("Blood Pool", 0.95f, 1234, 0.28f), blood, new Vector3(0.15f, 0.003f, 0.5f), 0f);
-            MeshPart("Blood Drip 1", root, BloodMesh("Blood Drip 1", 0.09f, 7, 0.35f), blood, new Vector3(1.15f, 0.003f, 0.9f), 0f);
-            MeshPart("Blood Drip 2", root, BloodMesh("Blood Drip 2", 0.06f, 19, 0.35f), blood, new Vector3(1.4f, 0.003f, 1.25f), 40f);
-            MeshPart("Blood Drip 3", root, BloodMesh("Blood Drip 3", 0.12f, 33, 0.3f), blood, new Vector3(-0.9f, 0.003f, 1.05f), 80f);
-            MeshPart("Blood Smear", root, BloodMesh("Blood Smear", 0.22f, 51, 0.45f), blood, new Vector3(0.75f, 0.003f, -0.2f), 20f, new Vector3(1.8f, 1f, 0.5f));
-
-            // The figure: "Mannequiny", a free jointed mannequin (see Models/Mannequin/Sources.txt),
-            // lying face down with its arms flung out, head at the pool.
-            // Re-posed with its own skeleton to lie collapsed: head turned, one arm flung past the
-            // head, the other limp at its side, one knee bent (Models/Mannequin/Mannequin Posed.obj).
-            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/GlassRoom/Models/Mannequin/Mannequin Posed.obj");
-            if (model != null)
+            // The body, face down, head in the pool.
+            var mesh = VictimPose.Bake();
+            if (mesh != null)
             {
-                var body = (GameObject)PrefabUtility.InstantiatePrefab(model);
-                body.name = "Body";
+                var body = new GameObject("Body");
                 body.transform.SetParent(root, false);
                 // Standing up the model faces +Z; tipped forward it lies face down, head toward +Z.
+                // Lowered until the front-most point touches the floor.
                 body.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                body.transform.localPosition = new Vector3(0.05f, 0.268f, -1.2f);
-                var shell = SimpleMaterial("Mannequin Shell", new Color(0.7f, 0.68f, 0.66f), 0.4f, 0f);
-                var dark = SimpleMaterial("Mannequin Dark", new Color(0.05f, 0.05f, 0.055f), 0.5f, 0f);
-                var joints = SimpleMaterial("Mannequin Joints", new Color(0.88f, 0.88f, 0.87f), 0.35f, 0f);
-                foreach (var r in body.GetComponentsInChildren<Renderer>())
-                {
-                    // The model's materials, in order: body, black details, white joints.
-                    var mats = r.sharedMaterials;
-                    for (int m = 0; m < mats.Length; m++)
-                    {
-                        string n = mats[m] != null ? mats[m].name : "";
-                        mats[m] = n.Contains("Negro") ? dark : n.Contains("Blanco") ? joints : shell;
-                    }
-                    r.sharedMaterials = mats;
-                    r.shadowCastingMode = ShadowCastingMode.Off;
-                }
+                body.transform.localPosition = new Vector3(0.05f, mesh.bounds.max.z - 0.012f, -1.25f);
+                body.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var r = body.AddComponent<MeshRenderer>();
+                r.sharedMaterials = new[] { VictimMaterial("Victim Body", "m027_body"), VictimMaterial("Victim Head", "m027_head") };
+                r.shadowCastingMode = ShadowCastingMode.On;
             }
-
-            // A drag smear leading away from the body, toward the hall.
-            MeshPart("Blood Trail", root, BloodMesh("Blood Trail", 0.2f, 77, 0.25f), blood, new Vector3(1.0f, 0.0035f, -0.9f), 28f, new Vector3(1.1f, 1f, 6f));
 
             // Spatter and runs on the wall behind, at body height and above.
-            var wall = new GameObject("Wall Spatter").transform;
-            wall.SetParent(root.parent, false);
-            var rnd = new System.Random(4242);
-            float wallZ = corner.z + 3.6f - 0.004f; // just off the north wall's inside face
-            for (int i = 0; i < 26; i++)
-            {
-                float x = corner.x - 1.6f + (float)rnd.NextDouble() * 2.6f;
-                float y = 0.25f + (float)System.Math.Pow(rnd.NextDouble(), 1.6) * 1.5f;
-                float size = 0.02f + (float)System.Math.Pow(rnd.NextDouble(), 2.2) * 0.14f;
-                var drop = new GameObject("Spatter " + i).transform;
-                drop.SetParent(wall, false);
-                drop.position = new Vector3(x, y, wallZ);
-                drop.rotation = Quaternion.Euler(-90f, 0f, 0f);
-                drop.localScale = Vector3.one;
-                drop.gameObject.AddComponent<MeshFilter>().sharedMesh = BloodMesh("Spatter " + i, size, 300 + i, 0.4f);
-                var dr = drop.gameObject.AddComponent<MeshRenderer>();
-                dr.sharedMaterial = blood;
-                dr.shadowCastingMode = ShadowCastingMode.Off;
-                // The bigger splashes run down the wall.
-                if (size > 0.07f)
-                {
-                    var run = new GameObject("Run " + i).transform;
-                    run.SetParent(wall, false);
-                    float len = 0.15f + (float)rnd.NextDouble() * 0.5f;
-                    run.position = new Vector3(x + ((float)rnd.NextDouble() - 0.5f) * size, y - len * 0.5f, wallZ - 0.0005f);
-                    run.rotation = Quaternion.Euler(-90f, 0f, 0f);
-                    run.localScale = new Vector3(0.12f, 1f, len / 0.1f);
-                    run.gameObject.AddComponent<MeshFilter>().sharedMesh = BloodMesh("Run " + i, 0.05f, 900 + i, 0.15f);
-                    var rr = run.gameObject.AddComponent<MeshRenderer>();
-                    rr.sharedMaterial = blood;
-                    rr.shadowCastingMode = ShadowCastingMode.Off;
-                }
-            }
-
-            // A failing cold light over the body: it hums, stutters and cuts out.
-            var flicker = new GameObject("Flickering Light").AddComponent<Light>();
-            flicker.transform.SetParent(root, false);
-            flicker.transform.localPosition = new Vector3(0.2f, 2.8f, 0f);
-            flicker.type = LightType.Point;
-            flicker.color = new Color(0.78f, 0.86f, 0.74f);
-            flicker.range = 6f;
-            flicker.intensity = 3.2f;
-            flicker.shadows = LightShadows.None;
-            flicker.gameObject.AddComponent<FlickerLight>();
+            float wallZ = corner.z + 3.6f - 0.006f; // just off the north wall's inside face
+            var spatter = BloodDecal("Wall Spatter", hall, "spray_wall", Vector3.zero, 0f, new Vector2(2.4f, 2.4f), 0.75f, 5);
+            spatter.transform.SetPositionAndRotation(new Vector3(corner.x - 0.4f, 1.15f, wallZ), Quaternion.Euler(-90f, 0f, 0f));
+            var drips = BloodDecal("Wall Drips", spatter.transform, "drips", Vector3.zero, 0f, new Vector2(1f, 1f), 0.8f, 6);
+            drips.transform.localPosition = new Vector3(0.1f, -0.0005f, -0.55f);
+            drips.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            drips.transform.localScale = new Vector3(0.8f, 1f, 0.9f);
 
             // Written in blood beside the body: "dw its / just ketchup" (Textures/Blood Text.png),
             // facing the hall so it reads the right way up as you walk over.
@@ -635,13 +589,94 @@ namespace GlassRoom.Editor
             }
         }
 
-        static void Limb(PrimitiveType type, string name, Transform root, Material mat, Vector3 position, Vector3 scale, Vector3 euler)
+        // A flat decal of wet blood lying on the floor (or, turned, on a wall): one of the
+        // Textures/Blood maps with its normal map, glossy, see-through at its thin edges.
+        static GameObject BloodDecal(string name, Transform parent, string map, Vector3 position, float yaw, Vector2 size, float smoothness, int order)
         {
-            var go = Primitive(type, name, root, mat);
+            string dir = "Assets/GlassRoom/Textures/Blood/";
+            string matPath = $"Assets/GlassRoom/Materials/Blood {map}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            if (mat == null)
+            {
+                mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                AssetDatabase.CreateAsset(mat, matPath);
+            }
+            mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + $"Blood {map}.png"));
+            mat.SetColor("_BaseColor", Color.white);
+            mat.SetTexture("_BumpMap", NormalMap(dir + $"Blood {map} normal.png"));
+            mat.SetFloat("_BumpScale", 0.35f);
+            mat.EnableKeyword("_NORMALMAP");
+            mat.SetFloat("_Smoothness", smoothness);
+            mat.SetFloat("_Metallic", 0f);
+            // Transparent, blended by the texture's alpha.
+            mat.SetFloat("_Surface", 1f);
+            mat.SetFloat("_Blend", 0f);
+            mat.SetFloat("_ZWrite", 0f);
+            mat.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            // Shine fades with the blood: where the texture is clear, nothing at all is drawn
+            // (by default transparent surfaces keep their reflections, showing the whole square).
+            mat.SetFloat("_BlendModePreserveSpecular", 0f);
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.renderQueue = (int)RenderQueue.Transparent - 50 + order;
+            EditorUtility.SetDirty(mat);
+
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
             go.transform.localPosition = position;
-            go.transform.localRotation = Quaternion.Euler(euler);
-            go.transform.localScale = scale;
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            go.transform.localScale = new Vector3(size.x, 1f, size.y);
+            go.AddComponent<MeshFilter>().sharedMesh = FlatSquare();
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            return go;
         }
+
+        // The character's own textures (Models/Victim/Textures) on a skin/cloth material.
+        static Material VictimMaterial(string name, string prefix)
+        {
+            string dir = "Assets/GlassRoom/Models/Victim/Textures/";
+            var mat = SimpleMaterial(name, Color.white, 0.32f, 0f);
+            mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(dir + prefix + "_color.png"));
+            mat.SetTexture("_BumpMap", NormalMap(dir + prefix + "_normal.png"));
+            mat.EnableKeyword("_NORMALMAP");
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        static Texture2D NormalMap(string path)
+        {
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer != null && importer.textureType != TextureImporterType.NormalMap)
+            {
+                importer.textureType = TextureImporterType.NormalMap;
+                importer.SaveAndReimport();
+            }
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        // A 1×1 square lying flat and facing up, centred, with UVs (saved once as an asset).
+        static Mesh FlatSquare()
+        {
+            const string path = "Assets/GlassRoom/Meshes/Flat Square.asset";
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (mesh != null) return mesh;
+            mesh = new Mesh { name = "Flat Square" };
+            mesh.vertices = new[] { new Vector3(-0.5f, 0f, -0.5f), new Vector3(0.5f, 0f, -0.5f), new Vector3(-0.5f, 0f, 0.5f), new Vector3(0.5f, 0f, 0.5f) };
+            mesh.uv = new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f) };
+            mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+            mesh.tangents = new[] { new Vector4(1, 0, 0, 1), new Vector4(1, 0, 0, 1), new Vector4(1, 0, 0, 1), new Vector4(1, 0, 0, 1) };
+            mesh.triangles = new[] { 0, 2, 1, 1, 2, 3 };
+            mesh.RecalculateBounds();
+            AssetDatabase.CreateAsset(mesh, path);
+            return mesh;
+        }
+
+
+
 
         static void MeshPart(string name, Transform root, Mesh mesh, Material mat, Vector3 position, float yaw, Vector3? scale = null)
         {
@@ -654,38 +689,6 @@ namespace GlassRoom.Editor
             var r = go.AddComponent<MeshRenderer>();
             r.sharedMaterial = mat;
             r.shadowCastingMode = ShadowCastingMode.Off;
-        }
-
-        // A flat, irregular puddle: a circle whose edge wobbles (several overlapping waves), so
-        // it looks like spilled liquid rather than a disc. Faces up; saved as an asset.
-        static Mesh BloodMesh(string name, float radius, int seed, float wobble)
-        {
-            const int points = 72;
-            var random = new System.Random(seed);
-            float[] amp = new float[4], phase = new float[4];
-            for (int k = 0; k < 4; k++) { amp[k] = (float)random.NextDouble() * wobble / (k + 1); phase[k] = (float)random.NextDouble() * Mathf.PI * 2f; }
-            var vertices = new List<Vector3> { Vector3.zero };
-            var normals = new List<Vector3> { Vector3.up };
-            var triangles = new List<int>();
-            for (int i = 0; i < points; i++)
-            {
-                float a = i / (float)points * Mathf.PI * 2f;
-                float r = 1f;
-                for (int k = 0; k < 4; k++) r += amp[k] * Mathf.Sin(a * (k + 2) + phase[k]);
-                vertices.Add(new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * radius * r);
-                normals.Add(Vector3.up);
-                triangles.AddRange(new[] { 0, 1 + (i + 1) % points, 1 + i });
-            }
-            var mesh = new Mesh { name = name };
-            mesh.SetVertices(vertices);
-            mesh.SetNormals(normals);
-            mesh.SetTriangles(triangles, 0);
-            mesh.RecalculateBounds();
-            string dir = "Assets/GlassRoom/Meshes";
-            string path = $"{dir}/{name}.asset";
-            AssetDatabase.DeleteAsset(path);
-            AssetDatabase.CreateAsset(mesh, path);
-            return mesh;
         }
 
         static GameObject Primitive(PrimitiveType type, string name, Transform parent, Material mat)
@@ -715,6 +718,8 @@ namespace GlassRoom.Editor
             mat.SetFloat("_Metallic", metallic);
             if (emission.HasValue)
             {
+                // Marked as really emitting, or Unity strips the glow back off the material.
+                mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
                 mat.EnableKeyword("_EMISSION");
                 mat.SetColor("_EmissionColor", emission.Value);
             }

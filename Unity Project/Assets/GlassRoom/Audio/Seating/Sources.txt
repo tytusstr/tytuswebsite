@@ -1,1 +1,3 @@
-Sit Down.wav: cut from "shuffling_movement.wav" in "Super Foley Pack" by dklon, opengameart.org/content/super-foley-pack, CC-BY 3.0 (creativecommons.org/licenses/by/3.0). Trimmed to one take, with short fades.
+Sit Down.wav: one sit-down cut from "Leather Sofa, Sit Down, Stand Up" by Kinoton,
+  https://freesound.org/people/Kinoton/sounds/397847/  (CC0 1.0). Trimmed to one take (57.7-60.4 s),
+  normalised, with short fades.

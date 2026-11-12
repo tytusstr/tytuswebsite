@@ -191,6 +191,16 @@ namespace GlassRoom
 
         void Update()
         {
+            // Until the visitor presses Enter on the website's cover, the game doesn't respond
+            // to anything and makes no sound at all.
+            bool covered = WebPage.Covered;
+            if (AudioListener.pause != covered) AudioListener.pause = covered;
+            if (covered)
+            {
+                if (m_Hud != null) m_Hud.ConsumeJump();
+                UpdatePrompts();
+                return;
+            }
             SyncPointer();
             ReadInput(out Vector2 move, out Vector2 look, out bool run);
             if (m_Camera != null && !Mathf.Approximately(m_Camera.fieldOfView, FovSettings.FieldOfView))
@@ -325,16 +335,38 @@ namespace GlassRoom
             Vector3 horizontal = new Vector3(m_Velocity.x, 0f, m_Velocity.z);
             horizontal = Vector3.Lerp(horizontal, target, 1f - Mathf.Exp(-acceleration * dt));
 
-            float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
-            m_GroundedTime = m_Controller.isGrounded ? m_GroundedTime + dt : 0f;
-            if (m_JumpPressed && m_Controller.isGrounded) { vertical = jumpSpeed; m_GroundedTime = 0f; }
+            // Standing on something steeper than you can stand on (like the side of the lamp
+            // shade) doesn't count as ground: you slide off it, and can't jump from it.
+            bool steep = m_Controller.isGrounded && Vector3.Angle(m_GroundNormal, Vector3.up) > m_Controller.slopeLimit + 1f;
+            bool grounded = m_Controller.isGrounded && !steep;
+            if (steep)
+            {
+                var away = new Vector3(m_GroundNormal.x, 0f, m_GroundNormal.z);
+                if (away.sqrMagnitude < 0.0001f) away = -transform.forward;
+                horizontal += away.normalized * SlideSpeed;
+            }
+            float vertical = grounded ? -2f : Mathf.Min(m_Velocity.y, steep ? 0f : m_Velocity.y) - gravity * dt;
+            m_GroundedTime = grounded ? m_GroundedTime + dt : 0f;
+            if (m_JumpPressed && grounded) { vertical = jumpSpeed; m_GroundedTime = 0f; }
             m_Velocity = new Vector3(horizontal.x, vertical, horizontal.z);
+            m_GroundNormal = Vector3.up;
             m_Controller.Move(m_Velocity * dt);
 
             // Use the actual distance moved so walking into a wall makes no steps.
             Vector3 actual = m_Controller.velocity;
             float groundSpeed = new Vector2(actual.x, actual.z).magnitude;
             UpdateSteps(groundSpeed, dt);
+        }
+
+        // The surface under your feet, from the last move (see ApplyMove).
+        Vector3 m_GroundNormal = Vector3.up;
+        const float SlideSpeed = 4f;
+
+        void OnControllerColliderHit(ControllerColliderHit hit)
+        {
+            // Something below the middle of you, i.e. what you're standing on.
+            if (hit.point.y < transform.position.y + m_Controller.radius)
+                m_GroundNormal = hit.normal;
         }
 
         void UpdateSteps(float groundSpeed, float dt)
@@ -630,7 +662,7 @@ namespace GlassRoom
                 {
                     // Skipping only works while music is playing. Without a mouse (a trackpad),
                     // N skips instead of right click.
-                    var playPause = MouseSettings.Enabled ? ("Left click", "play / pause") : ("Left click", "pause / play");
+                    var playPause = MouseSettings.Enabled ? ("Left click", "play / pause") : ("Click", "pause / play");
                     var next = MouseSettings.Enabled ? ("Right click", "next song") : ("N", "next song");
                     if (hinted.IsOn) m_Hud.SetKeyHints(playPause, next);
                     else m_Hud.SetKeyHints(playPause);

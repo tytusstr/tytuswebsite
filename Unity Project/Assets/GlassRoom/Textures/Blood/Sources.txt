@@ -1,0 +1,5 @@
+Blood pool1/pool2/smear/drips: recoloured from "Horror Texture Pack" (Horror_Stain_01/02/03/11) by Screaming Brain Studios,
+  https://opengameart.org/content/horror-texture-pack  (CC0)
+Blood spray_floor/spray_wall: recoloured/cropped from "Blood Splatter" (blood_0.png, blood_1.png),
+  https://opengameart.org/content/blood-splatter  (CC0)
+Normal maps were generated from each texture's alpha/thickness.

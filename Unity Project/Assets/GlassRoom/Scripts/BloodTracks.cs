@@ -6,8 +6,9 @@ namespace GlassRoom
     /// <summary>
     /// Blood you can walk and ride through. Stepping in a pool squelches and soaks your shoes:
     /// the steps after leave bloody prints, fainter each step. The scooter squelches through
-    /// and leaves two bloody tyre tracks that thin out as it rolls on. Every print and mark
-    /// slowly fades away. Sounds: recorded foley (Audio/Blood).
+    /// and leaves bloody tyre tracks, one under each wheel, that thin out as it rolls on.
+    /// Prints and tracks stay where they were made, like real blood would (only the very
+    /// oldest are reused once there are a great many). Sounds: recorded foley (Audio/Blood).
     /// </summary>
     public class BloodTracks : MonoBehaviour
     {
@@ -17,15 +18,16 @@ namespace GlassRoom
         [Range(0f, 1f)] public float squelchVolume = 0.8f;
         [Tooltip("A transparent material the prints and tracks are drawn with.")]
         public Material printMaterial;
-        [Tooltip("Seconds a print or track takes to fade away completely.")]
-        public float fadeSeconds = 30f;
 
         static readonly Color k_Blood = new Color(0.46f, 0.02f, 0.03f, 1f);
         static readonly int k_ColorId = Shader.PropertyToID("_BaseColor");
-        const int MaxMarks = 160;
+        const int MaxMarks = 700;
+        // Where the scooter's wheels touch the floor (StandUpScooterBuilder): 19 cm either side
+        // of the middle, each tyre about 4 cm wide.
+        const float WheelOffset = 0.19f, TyreWidth = 0.048f;
 
         struct Pool { public Vector3 centre; public float radius; }
-        class Mark { public Transform t; public Renderer r; public float born; public float strength; }
+        class Mark { public Transform t; public Renderer r; public float strength; }
 
         readonly List<Pool> m_Pools = new List<Pool>();
         readonly List<Mark> m_Marks = new List<Mark>();
@@ -107,8 +109,8 @@ namespace GlassRoom
             while (m_TyreDistance >= step)
             {
                 m_TyreDistance -= step;
-                foreach (float side in new[] { -0.09f, 0.09f })
-                    PlaceMark(m_TyreMat, position + right * side, rotation, new Vector3(0.04f, 1f, 0.15f), m_TyreBlood, false);
+                foreach (float side in new[] { -WheelOffset, WheelOffset })
+                    PlaceMark(m_TyreMat, position + right * side, rotation, new Vector3(TyreWidth, 1f, 0.15f), m_TyreBlood, false);
                 m_TyreBlood -= 0.022f;
                 if (m_TyreBlood <= 0.02f) break;
             }
@@ -145,29 +147,16 @@ namespace GlassRoom
             m.r.sharedMaterial = mat;
             m.r.enabled = true;
             // Slightly different heights so overlapping marks never flicker against each other.
-            m.t.SetPositionAndRotation(new Vector3(at.x, 0.003f + (m_Marks.IndexOf(m) % 7) * 0.0004f, at.z), rotation);
+            m.t.SetPositionAndRotation(new Vector3(at.x, 0.0045f + (m_Marks.IndexOf(m) % 7) * 0.0004f, at.z), rotation);
             m.t.localScale = new Vector3(mirror ? -size.x : size.x, 1f, size.z);
-            m.born = Time.time;
             m.strength = Mathf.Clamp01(strength);
-            Show(m, 1f);
+            Show(m);
         }
 
-        void Update()
-        {
-            foreach (var m in m_Marks)
-            {
-                if (!m.r.enabled) continue;
-                float age = (Time.time - m.born) / Mathf.Max(1f, fadeSeconds);
-                if (age >= 1f) { m.r.enabled = false; continue; }
-                // Holds for a moment, then fades out smoothly.
-                Show(m, 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.15f, 1f, age)));
-            }
-        }
-
-        void Show(Mark m, float fade)
+        void Show(Mark m)
         {
             var c = k_Blood;
-            c.a = Mathf.Lerp(0.35f, 0.92f, m.strength) * fade;
+            c.a = Mathf.Lerp(0.35f, 0.92f, m.strength);
             m_Block.SetColor(k_ColorId, c);
             m.r.SetPropertyBlock(m_Block);
         }
