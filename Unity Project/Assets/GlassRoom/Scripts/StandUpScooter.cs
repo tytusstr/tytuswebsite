@@ -50,7 +50,7 @@ namespace GlassRoom
 
         [Header("Headlight")]
         [Tooltip("Brightness of the headlight when fully on.")]
-        public float headlightIntensity = 4f;
+        public float headlightIntensity = 14f;
         [Tooltip("Seconds to fade on after stepping on, and off after stepping off.")]
         public float headlightFade = 1.2f;
         Light m_Headlight;
@@ -141,7 +141,8 @@ namespace GlassRoom
             var go = new GameObject("Headlight");
             go.transform.SetParent(transform, false);
             go.transform.localPosition = local + new Vector3(0f, 0.02f, 0.03f);
-            go.transform.localRotation = Quaternion.Euler(8f, 0f, 0f);
+            // Tipped down enough to light the floor ahead, not just skim across it.
+            go.transform.localRotation = Quaternion.Euler(14f, 0f, 0f);
             m_Headlight = go.AddComponent<Light>();
             m_Headlight.type = LightType.Spot;
             m_Headlight.color = new Color(0.92f, 0.96f, 1f);

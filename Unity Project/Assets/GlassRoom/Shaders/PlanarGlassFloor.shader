@@ -15,6 +15,8 @@ Shader "GlassRoom/Planar Glass Floor"
         _TileSize("Texture Tile Size (m)", Float) = 3
         _BumpScale("Normal Strength", Range(0, 2)) = 0.4
         _RippleStrength("Reflection Ripple", Range(0, 0.05)) = 0.006
+        _Contrast("Texture Contrast", Range(0.5, 4)) = 1
+        _WetPatches("Wet / Dry Patchiness", Range(0, 1)) = 0.6
         _ReflectionBlur("Reflection Blur", Range(0, 0.05)) = 0
     }
 
@@ -42,7 +44,7 @@ Shader "GlassRoom/Planar Glass Floor"
             // The mirror image replaces the blurry probe reflection, and the hidden room lights
             // shouldn't show up as glints: the only reflected light should be the real ring.
             #define _ENVIRONMENTREFLECTIONS_OFF 1
-            #define _SPECULARHIGHLIGHTS_OFF 1
+            // Light glints stay on: a wet-looking floor catches lights (like a headlight) in it.
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
@@ -57,6 +59,8 @@ Shader "GlassRoom/Planar Glass Floor"
                 float _TileSize;
                 half _BumpScale;
                 half _RippleStrength;
+                half _Contrast;
+                half _WetPatches;
                 half _ReflectionBlur;
             CBUFFER_END
 
@@ -104,6 +108,8 @@ Shader "GlassRoom/Planar Glass Floor"
                 half3 marble = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).rgb;
                 half3 bump = UnpackNormalScale(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
                 half roughness = SAMPLE_TEXTURE2D(_RoughnessMap, sampler_RoughnessMap, uv).r;
+                // Stronger mottling, like real poured concrete.
+                marble = saturate((marble - 0.45) * _Contrast + 0.45);
                 // The floor faces straight up: texture x runs along world x, texture y along world z.
                 half3 n = normalize(input.normalWS);
                 half3 bumped = normalize(half3(bump.x, bump.z, bump.y));
@@ -118,7 +124,7 @@ Shader "GlassRoom/Planar Glass Floor"
                 SurfaceData surface = (SurfaceData)0;
                 surface.albedo = _BaseColor.rgb * marble;
                 surface.metallic = _Metallic;
-                surface.smoothness = saturate(_Smoothness - roughness * 0.5);
+                surface.smoothness = saturate(_Smoothness - roughness * (0.3 + _WetPatches * 0.5));
                 surface.occlusion = 1;
                 surface.alpha = 1;
 
@@ -147,7 +153,7 @@ Shader "GlassRoom/Planar Glass Floor"
                 half facing = saturate(dot(inputData.normalWS, inputData.viewDirectionWS));
                 half fresnel = _MinReflectivity + (1 - _MinReflectivity) * pow(1 - facing, _FresnelPower);
                 // Rougher patches of the stone reflect a little less.
-                half amount = fresnel * _ReflectionStrength * _PlanarReflectionWeight * (1 - roughness * 0.6);
+                half amount = fresnel * _ReflectionStrength * _PlanarReflectionWeight * (1 - roughness * _WetPatches);
                 color.rgb = color.rgb * (1 - amount * 0.7) + reflection * amount;
 
                 color.rgb = MixFog(color.rgb, input.fogFactor);

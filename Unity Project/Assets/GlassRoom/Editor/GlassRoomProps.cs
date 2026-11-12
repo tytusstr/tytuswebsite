@@ -562,14 +562,7 @@ namespace GlassRoom.Editor
                 r.shadowCastingMode = ShadowCastingMode.On;
             }
 
-            // Spatter and runs on the wall behind, at body height and above.
-            float wallZ = corner.z + 3.6f - 0.006f; // just off the north wall's inside face
-            var spatter = BloodDecal("Wall Spatter", hall, "spray_wall", Vector3.zero, 0f, new Vector2(2.4f, 2.4f), 0.75f, 5);
-            spatter.transform.SetPositionAndRotation(new Vector3(corner.x - 0.4f, 1.15f, wallZ), Quaternion.Euler(-90f, 0f, 0f));
-            var drips = BloodDecal("Wall Drips", spatter.transform, "drips", Vector3.zero, 0f, new Vector2(1f, 1f), 0.8f, 6);
-            drips.transform.localPosition = new Vector3(0.1f, -0.0005f, -0.55f);
-            drips.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            drips.transform.localScale = new Vector3(0.8f, 1f, 0.9f);
+            // (No blood on the walls: only on the floor.)
 
             // Written in blood beside the body: "dw its / just ketchup" (Textures/Blood Text.png),
             // facing the hall so it reads the right way up as you walk over.

@@ -34,7 +34,7 @@ namespace GlassRoom.Editor
             root.SetParent(hall, false);
 
             var plaster = Material("Gallery Plaster", new Color(0.8f, 0.805f, 0.81f), 0.18f);
-            var ceiling = Material("Gallery Ceiling", new Color(0.32f, 0.325f, 0.33f), 0.25f);
+            var ceiling = Material("Gallery Ceiling", new Color(0.62f, 0.625f, 0.63f), 0.25f);
             var washed = Washed("Gallery Plaster Daylit", 6f, 0f, 0.22f);
             var soffitWash = Washed("Gallery Skylight Soffit", 5.2f, Height, 0.35f);
             PlasterWalls(hall, plaster, washed);
@@ -47,7 +47,7 @@ namespace GlassRoom.Editor
             var ambient = hall.GetComponent<HallAmbient>() ?? hall.gameObject.AddComponent<HallAmbient>();
             ambient.above = new Color(0.26f, 0.28f, 0.32f);
             ambient.sides = new Color(0.2f, 0.21f, 0.24f);
-            ambient.below = new Color(0.17f, 0.175f, 0.19f);
+            ambient.below = new Color(0.24f, 0.245f, 0.265f);
             ambient.Apply();
             EditorUtility.SetDirty(ambient);
             CoolGrade();
@@ -248,7 +248,7 @@ namespace GlassRoom.Editor
         // warm-white light onto the floor.
         static void Downlights(Transform root)
         {
-            var fixture = UnlitMaterial("Gallery Downlight", k_Downlight * 2.2f);
+            var fixture = UnlitMaterial("Gallery Downlight", k_Downlight * 6f); // bright enough to glow
             var trimMat = Material("Gallery Downlight Trim", new Color(0.55f, 0.56f, 0.58f), 0.55f);
             var lights = new GameObject("Downlights").transform;
             lights.SetParent(root, false);
@@ -259,9 +259,9 @@ namespace GlassRoom.Editor
                 disc.name = "Downlight";
                 Object.DestroyImmediate(disc.GetComponent<Collider>());
                 disc.transform.SetParent(lights, false);
-                // A glowing lens half a metre across, in a wider metal trim ring.
+                // A big glowing lens (75 cm across) in a metal trim ring.
                 disc.transform.localPosition = new Vector3(x, Height - 0.006f, z);
-                disc.transform.localScale = new Vector3(0.5f, 0.004f, 0.5f);
+                disc.transform.localScale = new Vector3(0.75f, 0.004f, 0.75f);
                 var r = disc.GetComponent<MeshRenderer>();
                 r.sharedMaterial = fixture;
                 r.shadowCastingMode = ShadowCastingMode.Off;
@@ -270,7 +270,7 @@ namespace GlassRoom.Editor
                 Object.DestroyImmediate(trim.GetComponent<Collider>());
                 trim.transform.SetParent(lights, false);
                 trim.transform.localPosition = new Vector3(x, Height - 0.003f, z);
-                trim.transform.localScale = new Vector3(0.62f, 0.003f, 0.62f);
+                trim.transform.localScale = new Vector3(0.9f, 0.003f, 0.9f);
                 var tr = trim.GetComponent<MeshRenderer>();
                 tr.sharedMaterial = trimMat;
                 tr.shadowCastingMode = ShadowCastingMode.Off;
@@ -280,9 +280,9 @@ namespace GlassRoom.Editor
                 l.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
                 l.type = LightType.Spot;
                 l.color = k_Downlight;
-                l.spotAngle = 60f;
-                l.innerSpotAngle = 18f;
-                l.intensity = 55f;
+                l.spotAngle = 80f;
+                l.innerSpotAngle = 30f;
+                l.intensity = 95f;
                 l.range = 12f;
                 l.shadows = LightShadows.None;
             }

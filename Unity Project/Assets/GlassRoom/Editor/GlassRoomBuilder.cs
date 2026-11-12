@@ -93,6 +93,7 @@ namespace GlassRoom.Editor
                 StandUpScooterBuilder.FitGrips(scooter);
                 // The saved scene keeps its old value otherwise.
                 scooter.humVolume = 0.125f;
+                scooter.headlightIntensity = 14f; // bright enough to show on the dark floor
                 EditorUtility.SetDirty(scooter);
             }
             else StandUpScooterBuilder.Build(hall.transform, k_ScooterPosition, ScooterYaw);
@@ -496,14 +497,16 @@ namespace GlassRoom.Editor
             var mat = LoadOrCreate("Floor Glass", Shader.Find("GlassRoom/Planar Glass Floor"));
             // Dark, nearly black blue-grey, with a strong, slightly smeared reflection, like
             // freshly sealed concrete that still looks a little wet.
-            mat.SetColor("_BaseColor", new Color(0.11f, 0.125f, 0.16f));
+            mat.SetColor("_BaseColor", new Color(0.17f, 0.19f, 0.235f));
             mat.SetFloat("_Smoothness", 0.9f);
             mat.SetFloat("_Metallic", 0f);
             mat.SetFloat("_ReflectionStrength", 0.95f);
             mat.SetFloat("_MinReflectivity", 0.3f);
             mat.SetFloat("_FresnelPower", 2.5f);
-            mat.SetFloat("_TileSize", 5f);
-            mat.SetFloat("_BumpScale", 0.15f);
+            mat.SetFloat("_TileSize", 3f);
+            mat.SetFloat("_BumpScale", 0.55f);
+            mat.SetFloat("_Contrast", 2.4f);
+            mat.SetFloat("_WetPatches", 0.85f);
             mat.SetFloat("_RippleStrength", 0.004f);
             mat.SetFloat("_ReflectionBlur", 0.009f);
             string dir = Root + "/Textures/";
