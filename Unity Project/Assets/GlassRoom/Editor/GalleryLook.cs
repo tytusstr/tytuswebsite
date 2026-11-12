@@ -44,6 +44,7 @@ namespace GlassRoom.Editor
             Skylight(root, soffitWash);
             Downlights(root);
             DaytimeSky();
+            CloudVideo(root);
             OutsideShell(root);
 
             // Soft bounced light everywhere (see HallAmbient).
@@ -267,7 +268,7 @@ namespace GlassRoom.Editor
         {
             var circle = CircleTexture();
             var lens = CircleMaterial("Gallery Downlight", circle, k_Downlight * 6f);
-            var ring = CircleMaterial("Gallery Downlight Trim", circle, new Color(0.42f, 0.43f, 0.45f));
+            var ring = CircleMaterial("Gallery Downlight Trim", circle, new Color(0.22f, 0.225f, 0.235f));
             var mesh = CircleQuad();
             var lights = new GameObject("Downlights").transform;
             lights.SetParent(root, false);
@@ -332,10 +333,11 @@ namespace GlassRoom.Editor
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
+        // The Round Light shader keeps each disc smooth and steady however far away it is.
         static Material CircleMaterial(string name, Texture2D circle, Color color)
         {
             string path = $"{Root}/Materials/{name}.mat";
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            var shader = Shader.Find("GlassRoom/Round Light");
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null || mat.shader != shader)
             {
@@ -345,13 +347,7 @@ namespace GlassRoom.Editor
             }
             mat.SetTexture("_BaseMap", circle);
             mat.SetColor("_BaseColor", color);
-            mat.SetFloat("_Surface", 1f);
-            mat.SetFloat("_Blend", 0f);
-            mat.SetFloat("_ZWrite", 0f);
-            mat.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
-            mat.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
-            mat.SetOverrideTag("RenderType", "Transparent");
-            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.SetFloat("_MinPixels", 3f);
             mat.renderQueue = (int)RenderQueue.Transparent + (name.EndsWith("Trim") ? 0 : 1);
             EditorUtility.SetDirty(mat);
             return mat;
@@ -409,6 +405,32 @@ namespace GlassRoom.Editor
             mat.SetFloat("_Rotation", 40f);
             EditorUtility.SetDirty(mat);
             RenderSettings.skybox = mat;
+        }
+
+        // The moving sky: a cloud time-lapse filmed looking straight up (SkyVideo), on a big
+        // plane high above the skylight, the way the sky looks from below. Its long side runs
+        // along the hall, like the slot.
+        static void CloudVideo(Transform root)
+        {
+            var shader = Shader.Find("GlassRoom/Sky Video");
+            string path = $"{Root}/Materials/Sky Video.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
+            mat.shader = shader;
+            mat.SetFloat("_Exposure", 1.1f);
+            mat.SetFloat("_EdgeFade", 0.18f);
+            EditorUtility.SetDirty(mat);
+            var go = new GameObject("Sky Video");
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = new Vector3(Width / 2f - GlassWidth / 2f, 75f, 0f);
+            go.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+            go.transform.localScale = new Vector3(190f, 1f, 107f); // 16:9, like the video
+            go.AddComponent<MeshFilter>().sharedMesh = CircleQuad();
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            go.AddComponent<SkyVideo>();
         }
 
         // A slightly cool, subdued grade like the reference.
