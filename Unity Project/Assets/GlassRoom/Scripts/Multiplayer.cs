@@ -193,7 +193,7 @@ namespace GlassRoom
             var inv = System.Globalization.CultureInfo.InvariantCulture;
             if (a[0] == "radio" && radio != null) radio.TogglePlayPause();
             else if (a[0] == "skip" && radio != null) radio.Skip();
-            else if (a[0] == "tp" && me != null) me.Teleport(new Vector3(float.Parse(a[1], inv), me.transform.position.y, float.Parse(a[2], inv)), float.Parse(a[3], inv));
+            else if (a[0] == "tp" && me != null) me.Teleport(new Vector3(float.Parse(a[1], inv), 0.05f, float.Parse(a[2], inv)), float.Parse(a[3], inv));
             else if (me != null) me.TestAct(a[0]);
             Dump();
         }

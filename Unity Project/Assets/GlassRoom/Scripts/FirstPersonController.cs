@@ -97,6 +97,8 @@ namespace GlassRoom
             m_EyeHeight = cameraPivot.localPosition.y;
             m_Yaw = transform.eulerAngles.y;
             m_BodyYaw = m_Yaw;
+            m_StartPosition = transform.position;
+            m_StartYaw = m_Yaw;
             m_Pitch = cameraPivot.localEulerAngles.x;
             if (m_Pitch > 180f) m_Pitch -= 360f;
 
@@ -246,6 +248,8 @@ namespace GlassRoom
                 ApplyMove(move, run);
             }
             UpdateBodyYaw(Time.deltaTime);
+            // Somehow fallen out of the building: back to where you started.
+            if (transform.position.y < FallLimit && m_Seat == null && m_Ride == null) Teleport(m_StartPosition, m_StartYaw);
             UpdatePrompts();
         }
 
@@ -254,6 +258,9 @@ namespace GlassRoom
         // The body turns a little towards where you're walking (sideways steps turn it a bit),
         // but never more than this from where your head points.
         const float BodyTurnLimit = 15f;
+        const float FallLimit = -20f;
+        Vector3 m_StartPosition;
+        float m_StartYaw;
         const float SeatedLookLimit = 90f;
         float m_BodyYaw;
 
