@@ -107,6 +107,19 @@ mergeInto(LibraryManager.library, {
     else m.el.volume = Math.max(0, Math.min(1, volume));
   },
 
+  // Jumps the current song to a time (seconds), e.g. to match other players.
+  WebMusic_Seek: function (seconds) {
+    var m = window.__webMusic;
+    if (!m) return;
+    try { m.el.currentTime = Math.max(0, seconds); } catch (e) {}
+  },
+
+  // How far into the current song it is, in seconds.
+  WebMusic_Position: function () {
+    var m = window.__webMusic;
+    return m && m.el ? (m.el.currentTime || 0) : 0;
+  },
+
   WebMusic_Ended: function () {
     var m = window.__webMusic;
     return m && m.ended ? 1 : 0;

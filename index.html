@@ -223,7 +223,7 @@
       createUnityInstance(canvas, config, function (progress) {
         fill.style.width = (100 * progress) + "%";
         if (progress >= 1 && !backupTimer) backupTimer = setTimeout(window.hideLoading, 8000);
-      }).then(window.hideLoading).catch(function (message) { console.error(message); });
+      }).then(function (game) { window.unityGame = game; window.hideLoading(); }).catch(function (message) { console.error(message); });
     };
     document.body.appendChild(script);
   </script>

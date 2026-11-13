@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5a833cd66e32e44b0931066ccb9a0917, type: 3}
+  m_Name: Player Avatars
+  m_EditorClassIdentifier: Assembly-CSharp::GlassRoom.PlayerAvatarLibrary
+  avatars:
+  - {fileID: 6921456561455548473, guid: 01b3cdb3ac04b4d31877b1d2dce52333, type: 3}
+  - {fileID: 7426048110662236519, guid: 06de1bf084bea45b3a91dd5770022b17, type: 3}
+  - {fileID: 6287413252188008325, guid: 1c832709e9bf047cd9f865367840ae49, type: 3}
+  - {fileID: 3656858176545581016, guid: 9efdc2694be5d4e1aa61bc8f60acd14a, type: 3}

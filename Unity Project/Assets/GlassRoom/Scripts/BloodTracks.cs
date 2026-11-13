@@ -64,6 +64,46 @@ namespace GlassRoom
             }
         }
 
+        // ---- Shared with other players (see NetworkPlayer) ----
+
+        /// <summary>A print or track you made: tyre track or footprint, where, which way, how big, how strong.</summary>
+        public static event System.Action<bool, Vector3, float, Vector3, float, bool> MarkPlaced;
+        /// <summary>A squelch you made, and how loud.</summary>
+        public static event System.Action<Vector3, float> Squelched;
+        bool m_Remote;
+
+        /// <summary>Another player's print or track, made here too.</summary>
+        public void PlaceRemote(bool tyre, Vector3 at, float yaw, Vector3 size, float strength, bool mirror)
+        {
+            var mat = tyre ? m_TyreMat : m_FootMat;
+            if (mat == null) return;
+            m_Remote = true;
+            RemoteMarks++;
+            PlaceMark(mat, at, Quaternion.Euler(0f, yaw, 0f), size, strength, mirror);
+            m_Remote = false;
+        }
+
+        /// <summary>Another player's squelch, heard from where they are.</summary>
+        public void SquelchAt(Vector3 position, float loudness)
+        {
+            if (squelchClips == null || squelchClips.Length == 0) return;
+            var clip = squelchClips[Random.Range(0, squelchClips.Length)];
+            var go = new GameObject("Squelch");
+            go.transform.position = position;
+            var a = go.AddComponent<AudioSource>();
+            a.spatialBlend = 1f;
+            a.minDistance = 2f;
+            a.maxDistance = 25f;
+            a.rolloffMode = AudioRolloffMode.Logarithmic;
+            a.pitch = Random.Range(0.9f, 1.1f);
+            a.PlayOneShot(clip, squelchVolume * loudness);
+            Destroy(go, clip.length + 0.2f);
+        }
+
+        /// <summary>Prints and tracks on the floor (testing).</summary>
+        public int MarkCount { get { int n = 0; foreach (var m in m_Marks) if (m.t != null && m.t.gameObject.activeSelf) n++; return n; } }
+        public int RemoteMarks { get; private set; }
+
         public bool InBlood(Vector3 p)
         {
             foreach (var pool in m_Pools)
@@ -124,6 +164,7 @@ namespace GlassRoom
             m_LastClip = pick;
             m_Source.pitch = Random.Range(0.9f, 1.1f);
             m_Source.PlayOneShot(squelchClips[pick], squelchVolume * loudness);
+            Squelched?.Invoke(transform.position, loudness);
         }
 
         void PlaceMark(Material mat, Vector3 at, Quaternion rotation, Vector3 size, float strength, bool mirror)
@@ -151,6 +192,7 @@ namespace GlassRoom
             m.t.localScale = new Vector3(mirror ? -size.x : size.x, 1f, size.z);
             m.strength = Mathf.Clamp01(strength);
             Show(m);
+            if (!m_Remote) MarkPlaced?.Invoke(mat == m_TyreMat, at, rotation.eulerAngles.y, size, strength, mirror);
         }
 
         void Show(Mark m)

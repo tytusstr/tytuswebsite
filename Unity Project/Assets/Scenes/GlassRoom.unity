@@ -244,6 +244,7 @@ GameObject:
   - component: {fileID: 12719747}
   - component: {fileID: 12719750}
   - component: {fileID: 12719751}
+  - component: {fileID: 12719752}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -366,6 +367,18 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 1472fa04ca95043d9b8bc895b7664faa, type: 3}
   squelchVolume: 0.8
   printMaterial: {fileID: 2100000, guid: 58e89abc278d94828b36a14669e6eb79, type: 2}
+--- !u!114 &12719752
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 12719746}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f6f96ff0f936840c1942ca66ae5bbec4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GlassRoom.LocalPlayerBody
 --- !u!1 &13602289
 GameObject:
   m_ObjectHideFlags: 0
@@ -9922,7 +9935,7 @@ Camera:
   m_Depth: 0
   m_CullingMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 4294967039
   m_RenderingPath: -1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
@@ -10042,6 +10055,53 @@ ReflectionProbe:
   m_UseOcclusionCulling: 1
   m_Importance: 1
   m_CustomBakedTexture: {fileID: 8900000, guid: 1fab8d17a8c5b436daf2c1085461f3b7, type: 3}
+--- !u!1 &1259857835
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1259857837}
+  - component: {fileID: 1259857836}
+  m_Layer: 0
+  m_Name: Multiplayer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1259857836
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1259857835}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 75025144226884b9d985e212491a0bad, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GlassRoom.Multiplayer
+  playerPrefab: {fileID: 2438670848839308970, guid: 1d8c5afe791374945a54c3cd2c4b2ca7, type: 3}
+  sessionName: glass-room
+  maxPlayers: 100
+--- !u!4 &1259857837
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1259857835}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1261318497
 GameObject:
   m_ObjectHideFlags: 0
@@ -17290,3 +17350,4 @@ SceneRoots:
   - {fileID: 1390430453}
   - {fileID: 842533700}
   - {fileID: 12719749}
+  - {fileID: 1259857837}

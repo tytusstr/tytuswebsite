@@ -203,6 +203,7 @@ namespace GlassRoom
             }
             SyncPointer();
             ReadInput(out Vector2 move, out Vector2 look, out bool run);
+            if (TestMove != Vector2.zero) { move = TestMove; run = TestRun; }
             if (m_Camera != null && !Mathf.Approximately(m_Camera.fieldOfView, FovSettings.FieldOfView))
                 m_Camera.fieldOfView = FovSettings.FieldOfView;
             if (m_Ride != null && InputModeManager.Mode == ControlMode.Touchscreen)
@@ -237,6 +238,10 @@ namespace GlassRoom
             }
             UpdatePrompts();
         }
+
+        /// <summary>Testing only (see Multiplayer.TestWalk): held joystick input.</summary>
+        public static Vector2 TestMove;
+        public static bool TestRun;
 
         void ReadInput(out Vector2 move, out Vector2 look, out bool run)
         {
@@ -484,12 +489,62 @@ namespace GlassRoom
         // ---------- Sitting ----------
 
         Seat m_Seat;
+
+        // What the player is doing, for their visible body (LocalPlayerBody) and for other players.
+        public Seat CurrentSeat => m_Seat;
+        public StandUpScooter CurrentRide => m_Ride;
+        public float Yaw => m_Yaw;
+        /// <summary>How fast you're moving over the ground (0 while seated or riding).</summary>
+        public float GroundSpeed
+        {
+            get
+            {
+                if (m_Ride != null || m_Seat != null || m_Controller == null || !m_Controller.enabled) return 0f;
+                var v = m_Controller.velocity;
+                return new Vector2(v.x, v.z).magnitude;
+            }
+        }
+        /// <summary>Moves you to a spot on the floor, facing a direction (e.g. where you start).</summary>
+        public void Teleport(Vector3 feet, float yaw)
+        {
+            if (m_Seat != null || m_Ride != null) return;
+            bool was = m_Controller.enabled;
+            m_Controller.enabled = false;
+            transform.position = feet;
+            m_Yaw = yaw;
+            transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            m_Velocity = Vector3.zero;
+            m_Controller.enabled = was;
+        }
+
+        public bool Airborne => m_Ride == null && m_Seat == null && m_Controller != null && m_Controller.enabled && !m_Controller.isGrounded;
         const float SeatedEyeAboveSeat = 0.74f;
 
         // Sits in the chair, facing out of it. You can look around but not walk; moving,
         // jumping or clicking stands you back up.
+        /// <summary>Testing only (see Multiplayer.TestAct): sit, stand, ride, off.</summary>
+        public void TestAct(string what)
+        {
+            if (what == "sit" || what == "ride")
+            {
+                Component best = null; float bestDistance = float.MaxValue;
+                Component[] options = what == "sit" ? FindObjectsByType<Seat>(FindObjectsInactive.Exclude) : FindObjectsByType<StandUpScooter>(FindObjectsInactive.Exclude);
+                foreach (var c in options)
+                {
+                    float d = Vector3.Distance(c.transform.position, transform.position);
+                    if (d < bestDistance) { bestDistance = d; best = c; }
+                }
+                if (best is Seat seat) SitDown(seat);
+                else if (best is StandUpScooter scooter) StepOn(scooter);
+            }
+            else if (what == "stand" && m_Seat != null) StandUp();
+            else if (what == "off" && m_Ride != null) StepOff();
+        }
+
         void SitDown(Seat seat)
         {
+            // Someone else is already sitting there.
+            if (Multiplayer.SeatTakenByOther(seat)) return;
             m_Seat = seat;
             m_Velocity = Vector3.zero;
             m_Controller.enabled = false;
@@ -519,6 +574,10 @@ namespace GlassRoom
 
         void StepOn(StandUpScooter scooter)
         {
+            // Someone else is riding it.
+            if (Multiplayer.ScooterRiddenByOther) return;
+            scooter.TakeBackControl();
+            Multiplayer.ClaimScooter();
             m_Ride = scooter;
             m_RideSpeed = 0f;
             m_Velocity = Vector3.zero;

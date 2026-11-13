@@ -126,7 +126,9 @@ namespace GlassRoom
             cam.farClipPlane = main.farClipPlane;
             cam.aspect = main.aspect;
             cam.allowHDR = true;
-            cam.cullingMask = main.cullingMask;
+            // Everything you see, plus your own body (your view leaves it out; mirrors show it).
+            int body = LayerMask.NameToLayer(LocalPlayerBody.LayerName);
+            cam.cullingMask = main.cullingMask | (body >= 0 ? 1 << body : 0);
             cam.targetTexture = m_Texture;
         }
 

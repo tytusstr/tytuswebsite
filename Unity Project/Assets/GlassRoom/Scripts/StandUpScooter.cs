@@ -185,6 +185,31 @@ namespace GlassRoom
             }
         }
 
+        // ---- Ridden by another player (see NetworkPlayer) ----
+        bool m_RemoteControlled;
+        Vector3 m_RemotePosition;
+        float m_RemoteYaw;
+
+        /// <summary>
+        /// Moves the scooter where another player has it (riding it or after they've let it roll
+        /// to a stop). It glides to each new spot, so it moves smoothly.
+        /// </summary>
+        public void FollowRemote(Vector3 position, float yaw, float speed, bool ridden)
+        {
+            if (!m_RemoteControlled) { transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f)); }
+            m_RemoteControlled = true;
+            m_RemotePosition = position;
+            m_RemoteYaw = yaw;
+            m_Speed = speed;
+            m_Ridden = ridden; // headlight on while someone rides it
+        }
+
+        /// <summary>This player has the scooter again (they've stepped on it).</summary>
+        public void TakeBackControl() => m_RemoteControlled = false;
+
+        public bool RemoteControlled => m_RemoteControlled;
+        public float Speed => m_Speed;
+
         /// <summary>Called every frame while riding with the signed speed in metres per second.</summary>
         public void UpdateMotion(float speed) => m_Speed = speed;
 
@@ -192,16 +217,27 @@ namespace GlassRoom
         {
             float dt = Time.deltaTime;
             UpdateHeadlight(dt);
-            // Stepped off while moving: it rolls on by itself, slowing down, until it stops.
-            if (!m_Ridden && m_Speed != 0f)
+            if (m_RemoteControlled)
             {
-                m_Speed = Mathf.MoveTowards(m_Speed, 0f, coastDeceleration * dt);
-                Coast(m_Speed * dt);
+                // Another player's scooter: follow them smoothly. (Their tyre tracks arrive
+                // through the network, so none are made here.)
+                float k = 1f - Mathf.Exp(-18f * dt);
+                transform.SetPositionAndRotation(Vector3.Lerp(transform.position, m_RemotePosition, k),
+                    Quaternion.Slerp(transform.rotation, Quaternion.Euler(0f, m_RemoteYaw, 0f), k));
             }
+            else
+            {
+                // Stepped off while moving: it rolls on by itself, slowing down, until it stops.
+                if (!m_Ridden && m_Speed != 0f)
+                {
+                    m_Speed = Mathf.MoveTowards(m_Speed, 0f, coastDeceleration * dt);
+                    Coast(m_Speed * dt);
+                }
 
-            // Rolling through blood: a squelch and bloody tyre tracks (ridden or coasting).
-            if (BloodTracks.Instance != null && Mathf.Abs(m_Speed) > 0.05f)
-                BloodTracks.Instance.Roll(transform.position, transform.forward, transform.right, Mathf.Abs(m_Speed) * dt);
+                // Rolling through blood: a squelch and bloody tyre tracks (ridden or coasting).
+                if (BloodTracks.Instance != null && Mathf.Abs(m_Speed) > 0.05f)
+                    BloodTracks.Instance.Roll(transform.position, transform.forward, transform.right, Mathf.Abs(m_Speed) * dt);
+            }
 
             float degrees = m_Speed * dt / wheelRadius * Mathf.Rad2Deg;
             foreach (var wheel in wheels)

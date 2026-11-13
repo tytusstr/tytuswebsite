@@ -1,0 +1,3 @@
+Player characters (Male_Adult_01, _08, _12, _17) and animations (m_walk_neutral_01, m_run_neutral_01,
+m_idle_neutral_01, m_sit_chair_idle_neutral_01) from the Microsoft Rocketbox avatar library,
+https://github.com/microsoft/Microsoft-Rocketbox (MIT License, see LICENSE.md). Textures resized to 1024.

@@ -48,6 +48,8 @@ namespace GlassRoom
         [DllImport("__Internal")] static extern void WebMusic_Resume();
         [DllImport("__Internal")] static extern void WebMusic_SetVolume(float volume);
         [DllImport("__Internal")] static extern int WebMusic_Ended();
+        [DllImport("__Internal")] static extern void WebMusic_Seek(float seconds);
+        [DllImport("__Internal")] static extern float WebMusic_Position();
         static bool UseWeb(MusicSpeaker s) => s.webTracks != null && s.webTracks.Length > 0;
 #else
         static void WebMusic_Play(string url) { }
@@ -55,6 +57,8 @@ namespace GlassRoom
         static void WebMusic_Resume() { }
         static void WebMusic_SetVolume(float volume) { }
         static int WebMusic_Ended() => 0;
+        static void WebMusic_Seek(float seconds) { }
+        static float WebMusic_Position() => 0f;
         static bool UseWeb(MusicSpeaker s) => false;
 #endif
 
@@ -74,6 +78,44 @@ namespace GlassRoom
 
         /// <summary>True while music is playing (not paused).</summary>
         public bool IsOn => !m_Paused;
+
+        // ---- Shared with other players (see NetworkPlayer) ----
+
+        /// <summary>Raised when someone here presses play/pause or skip.</summary>
+        public event System.Action UserChanged;
+        /// <summary>The song playing (or paused): 0 is the first track.</summary>
+        public int CurrentTrack => m_Current;
+        /// <summary>How far into the current song it is, in seconds.</summary>
+        public float Position
+        {
+            get
+            {
+                if (m_Current < 0) return 0f;
+                if (m_Web) return WebMusic_Position();
+                return m_Source != null ? m_Source.time : 0f;
+            }
+        }
+
+        /// <summary>
+        /// Matches another player's radio: same song, same moment, playing or paused. Quietly
+        /// (no click), and only jumps if it's noticeably off, so it never stutters.
+        /// </summary>
+        public void ApplyShared(bool on, int track, float position)
+        {
+            if (!HasTrack(track)) return;
+            if (m_Pending != null) { StopCoroutine(m_Pending); m_Pending = null; }
+            if (track != m_Current) PlayTrack(track, position);
+            else if (Mathf.Abs(Position - position) > 2f) Seek(position);
+            if (on && m_Paused) Resume();
+            else if (!on && !m_Paused) Pause();
+        }
+
+        void Seek(float position)
+        {
+            if (m_Web) WebMusic_Seek(position);
+            else if (m_Source != null && m_Source.clip != null) m_Source.time = Mathf.Clamp(position, 0f, m_Source.clip.length - 0.05f);
+            m_Played = position;
+        }
 
         int TrackCount => m_Web ? webTracks.Length : 1 + (playlist != null ? playlist.Length : 0);
 
@@ -108,7 +150,7 @@ namespace GlassRoom
             if (m_Web)
             {
                 UpdateWebVolume();
-                if (WebMusic_Ended() != 0) PlayTrack(PickNext());
+                if (WebMusic_Ended() != 0) PlayTrack(NextAfter(m_Current));
                 return;
             }
             if (m_Source.isPlaying)
@@ -119,7 +161,7 @@ namespace GlassRoom
             // When a track finishes on its own, move on to another one.
             var clip = m_Source.clip;
             if (clip == null || m_Played >= clip.length - 1f)
-                PlayTrack(PickNext());
+                PlayTrack(NextAfter(m_Current));
         }
 
         // Same fall-off as the computer version: full volume within fullVolumeDistance, then
@@ -145,6 +187,7 @@ namespace GlassRoom
                 Pause();
                 Click();
             }
+            UserChanged?.Invoke();
         }
 
         /// <summary>Skips to a random different track. Does nothing while paused.</summary>
@@ -154,7 +197,7 @@ namespace GlassRoom
             // The music stops, a click, then the next song.
             StopForSkip();
             int next = PickNext();
-            AfterClick(() => PlayTrack(next));
+            AfterClick(() => { PlayTrack(next); UserChanged?.Invoke(); });
         }
 
         // A single tap can arrive twice on some phones; presses closer together than this are
@@ -216,22 +259,25 @@ namespace GlassRoom
             ShowState();
         }
 
-        void PlayTrack(int index)
+        void PlayTrack(int index) => PlayTrack(index, 0f);
+
+        void PlayTrack(int index, float startAt)
         {
             if (!HasTrack(index)) return;
             m_Current = index;
-            m_Played = 0f;
+            m_Played = startAt;
             if (m_Web)
             {
                 string url = Application.streamingAssetsPath + "/Music/" + System.Uri.EscapeDataString(webTracks[index]);
                 WebMusic_Play(url);
+                if (startAt > 0.5f) WebMusic_Seek(startAt);
                 m_AppliedWebVolume = -1f;
                 UpdateWebVolume();
             }
             else
             {
                 m_Source.clip = ClipAt(index);
-                m_Source.time = 0f;
+                m_Source.time = m_Source.clip != null ? Mathf.Clamp(startAt, 0f, m_Source.clip.length - 0.05f) : 0f;
                 m_Source.Play();
             }
             m_Paused = false;
@@ -244,6 +290,17 @@ namespace GlassRoom
         {
             if (index < 0 || index >= TrackCount) return false;
             return m_Web ? !string.IsNullOrEmpty(webTracks[index]) : ClipAt(index) != null;
+        }
+
+        // When a song ends by itself, the next one follows from the one that finished, the same
+        // way for everyone, so players listening together stay on the same song.
+        int NextAfter(int current)
+        {
+            var options = new System.Collections.Generic.List<int>();
+            for (int i = 1; i < TrackCount; i++)
+                if (i != current && HasTrack(i)) options.Add(i);
+            if (options.Count == 0) return HasTrack(current) ? current : 0;
+            return options[(int)((uint)(current * 2654435761u + 97u) % (uint)options.Count)];
         }
 
         // A random track other than the first one and the one playing now.
