@@ -204,6 +204,25 @@ namespace GlassRoom
             m_Ridden = ridden; // headlight on while someone rides it
         }
 
+        Transform m_LeftGrip, m_RightGrip;
+
+        /// <summary>Where a rider's wrist goes on the handlebar: side -1 left, +1 right.</summary>
+        public Vector3 GripPoint(int side)
+        {
+            if (m_LeftGrip == null || m_RightGrip == null)
+            {
+                foreach (var t in GetComponentsInChildren<Transform>(true))
+                {
+                    if (t.name != "Grip") continue;
+                    if (transform.InverseTransformPoint(t.position).x < 0f) m_LeftGrip = t; else m_RightGrip = t;
+                }
+            }
+            var grip = side < 0 ? m_LeftGrip : m_RightGrip;
+            Vector3 p = grip != null ? grip.position : transform.TransformPoint(new Vector3(0.193f * side, 1.031f, 0.122f));
+            // The wrist sits just behind and above the middle of the grip.
+            return p - transform.forward * 0.03f + Vector3.up * 0.025f;
+        }
+
         /// <summary>This player has the scooter again (they've stepped on it).</summary>
         public void TakeBackControl() => m_RemoteControlled = false;
 
@@ -248,7 +267,15 @@ namespace GlassRoom
             float follow = 1f - Mathf.Exp(-12f * dt);
             // The electric motor, louder and higher the faster it goes.
             m_Motor.pitch = Mathf.Lerp(0.85f, 1.5f, t);
-            m_Motor.volume = Mathf.Lerp(m_Motor.volume, moving * humVolume * Mathf.Lerp(0.6f, 1f, t), follow);
+            // Someone else's scooter (or one rolling by itself) is quieter the further away it is.
+            float distanceLevel = 1f;
+            if (!m_Ridden || m_RemoteControlled)
+            {
+                var cam = Camera.main;
+                float d = cam != null ? Vector3.Distance(cam.transform.position, transform.position) : 0f;
+                distanceLevel = 2.5f / Mathf.Max(2.5f, d);
+            }
+            m_Motor.volume = Mathf.Lerp(m_Motor.volume, moving * humVolume * Mathf.Lerp(0.6f, 1f, t) * distanceLevel, follow);
         }
 
         // Brings a recording up to full level (a plain volume change, since the recordings are quiet).

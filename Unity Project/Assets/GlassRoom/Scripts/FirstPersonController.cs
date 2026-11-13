@@ -14,7 +14,7 @@ namespace GlassRoom
         public Transform cameraPivot;
 
         [Header("Movement")]
-        public float walkSpeed = 2.85f;
+        public float walkSpeed = 2.14f;
         public float runSpeed = 5.65f;
         public float acceleration = 10f;
         public float gravity = 20f;
@@ -96,6 +96,7 @@ namespace GlassRoom
             m_Camera = cameraPivot.GetComponent<Camera>();
             m_EyeHeight = cameraPivot.localPosition.y;
             m_Yaw = transform.eulerAngles.y;
+            m_BodyYaw = m_Yaw;
             m_Pitch = cameraPivot.localEulerAngles.x;
             if (m_Pitch > 180f) m_Pitch -= 360f;
 
@@ -217,8 +218,16 @@ namespace GlassRoom
             }
             else if (m_Seat != null)
             {
-                // Seated: look around freely; walking or jumping stands you up.
+                // Seated: look around, but not round behind the chair's back; walking or jumping
+                // stands you up.
                 ApplyLook(look);
+                float chair = Quaternion.LookRotation(m_Seat.Facing).eulerAngles.y;
+                float turned = Mathf.Clamp(Mathf.DeltaAngle(chair, m_Yaw), -SeatedLookLimit, SeatedLookLimit);
+                if (!Mathf.Approximately(chair + turned, m_Yaw))
+                {
+                    m_Yaw = chair + turned;
+                    transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
+                }
                 if (move.sqrMagnitude > 0.04f || m_JumpPressed) StandUp();
             }
             else if (m_Ride != null)
@@ -236,7 +245,54 @@ namespace GlassRoom
                 ApplyLook(look);
                 ApplyMove(move, run);
             }
+            UpdateBodyYaw(Time.deltaTime);
             UpdatePrompts();
+        }
+
+        // ---------- Your body, as others (and mirrors) see it ----------
+
+        // The body turns a little towards where you're walking (sideways steps turn it a bit),
+        // but never more than this from where your head points.
+        const float BodyTurnLimit = 15f;
+        const float SeatedLookLimit = 90f;
+        float m_BodyYaw;
+
+        /// <summary>Which way your body faces, in degrees.</summary>
+        public float BodyYaw
+        {
+            get
+            {
+                if (m_Seat != null) return Quaternion.LookRotation(m_Seat.Facing).eulerAngles.y;
+                if (m_Ride != null) return m_Ride.transform.eulerAngles.y;
+                return m_BodyYaw;
+            }
+        }
+
+        /// <summary>Where your head is turned, relative to your body (degrees, right is positive).</summary>
+        public float HeadYaw => Mathf.DeltaAngle(BodyYaw, m_Yaw + (m_Ride != null ? m_RideLookYaw : 0f));
+
+        /// <summary>How far you're looking down (positive) or up (negative), in degrees.</summary>
+        public float HeadPitch => m_Pitch;
+
+        void UpdateBodyYaw(float dt)
+        {
+            float target = m_Yaw;
+            if (m_Ride == null && m_Seat == null && m_Controller.enabled)
+            {
+                Vector3 v = m_Controller.velocity;
+                v.y = 0f;
+                if (v.magnitude > 0.3f)
+                {
+                    float moving = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
+                    float delta = Mathf.DeltaAngle(m_Yaw, moving);
+                    // Walking backwards the body faces forward, turned towards the side stepped to.
+                    if (Mathf.Abs(delta) > 90f) delta = Mathf.DeltaAngle(m_Yaw, moving + 180f);
+                    target = m_Yaw + Mathf.Clamp(delta, -BodyTurnLimit, BodyTurnLimit);
+                }
+            }
+            m_BodyYaw = Mathf.MoveTowardsAngle(m_BodyYaw, target, 120f * dt);
+            // Never further than the limit from the head, however fast you turn.
+            m_BodyYaw = m_Yaw + Mathf.Clamp(Mathf.DeltaAngle(m_Yaw, m_BodyYaw), -BodyTurnLimit, BodyTurnLimit);
         }
 
         /// <summary>Testing only (see Multiplayer.TestWalk): held joystick input.</summary>
@@ -357,8 +413,18 @@ namespace GlassRoom
                 }
             }
             float vertical = grounded ? -2f : Mathf.Min(m_Velocity.y, steep ? 0f : m_Velocity.y) - gravity * dt;
+            // Landing after a jump or a drop: a heavier step.
+            if (grounded && !m_WasGrounded && m_FallSpeed > 3f)
+                JumpSound(SharedSound.Land, Mathf.Lerp(0.8f, 1.15f, Mathf.InverseLerp(3f, 9f, m_FallSpeed)));
+            m_WasGrounded = grounded;
+            m_FallSpeed = grounded ? 0f : Mathf.Max(m_FallSpeed, -m_Velocity.y);
             m_GroundedTime = grounded ? m_GroundedTime + dt : 0f;
-            if (m_JumpPressed && grounded) { vertical = jumpSpeed; m_GroundedTime = 0f; }
+            if (m_JumpPressed && grounded)
+            {
+                vertical = jumpSpeed;
+                m_GroundedTime = 0f;
+                JumpSound(SharedSound.Jump, 0.55f);
+            }
             m_Velocity = new Vector3(horizontal.x, vertical, horizontal.z);
             m_GroundNormal = Vector3.up;
             m_Controller.Move(m_Velocity * dt);
@@ -367,6 +433,20 @@ namespace GlassRoom
             Vector3 actual = m_Controller.velocity;
             float groundSpeed = new Vector2(actual.x, actual.z).magnitude;
             UpdateSteps(groundSpeed, dt);
+        }
+
+        bool m_WasGrounded = true;
+        float m_FallSpeed;
+
+        // A footstep for pushing off or landing, heard by everyone nearby.
+        void JumpSound(SharedSound sound, float loudness)
+        {
+            if (m_StepClips == null || m_StepClips.Length == 0) return;
+            int index = Random.Range(0, m_StepClips.Length);
+            m_StepSource.pitch = footstepPitch * (sound == SharedSound.Land ? 0.9f : 1f) * Random.Range(0.95f, 1.04f);
+            m_StepSource.panStereo = 0f;
+            m_StepSource.PlayOneShot(m_StepClips[index], footstepVolume * loudness);
+            SharedSounds.Raise(sound, index, transform.position, footstepVolume * loudness);
         }
 
         // The surface under your feet, from the last move (see ApplyMove).
@@ -513,6 +593,7 @@ namespace GlassRoom
             transform.position = feet;
             m_Yaw = yaw;
             transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            m_BodyYaw = yaw;
             m_Velocity = Vector3.zero;
             m_Controller.enabled = was;
         }
@@ -548,13 +629,14 @@ namespace GlassRoom
             m_Seat = seat;
             m_Velocity = Vector3.zero;
             m_Controller.enabled = false;
-            transform.position = seat.FloorPoint;
+            transform.position = seat.SitPoint;
             m_Yaw = Quaternion.LookRotation(seat.Facing).eulerAngles.y;
             transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
             m_Pitch = 0f;
             cameraPivot.localRotation = Quaternion.identity;
             cameraPivot.localPosition = new Vector3(0f, seat.seatHeight + SeatedEyeAboveSeat, 0f);
             seat.PlaySitSound();
+            SharedSounds.Raise(SharedSound.Sit, Multiplayer.SeatIndex(seat), seat.SitPoint + Vector3.up * 0.5f, seat.sitVolume);
         }
 
         void StandUp()
@@ -562,11 +644,22 @@ namespace GlassRoom
             var seat = m_Seat;
             if (seat == null) return;
             m_Seat = null;
-            // Step out in front of the chair, or stay put if that's blocked.
-            Vector3 front = seat.FloorPoint + seat.Facing * 0.75f;
+            // Step out in front of the chair: just clear of it, or a little further if something's
+            // in the way there (the chair itself doesn't count).
             float r = m_Controller.radius;
-            if (!Physics.CheckCapsule(front + Vector3.up * (r + 0.05f), front + Vector3.up * (m_Controller.height - r), r, ~0, QueryTriggerInteraction.Ignore))
-                transform.position = front + Vector3.up * 0.02f;
+            Vector3 front = seat.SitPoint + seat.Facing * 0.8f;
+            foreach (float distance in new[] { 0.8f, 0.95f, 1.1f, 1.3f, 1.5f })
+            {
+                Vector3 p = seat.SitPoint + seat.Facing * distance;
+                bool blocked = false;
+                foreach (var c in Physics.OverlapCapsule(p + Vector3.up * (r + 0.05f), p + Vector3.up * (m_Controller.height - r), r, ~0, QueryTriggerInteraction.Ignore))
+                    if (!c.transform.IsChildOf(seat.transform) && c != m_Controller) { blocked = true; break; }
+                if (!blocked) { front = p; break; }
+            }
+            transform.position = front + Vector3.up * 0.02f;
+            m_Yaw = Quaternion.LookRotation(seat.Facing).eulerAngles.y + Mathf.Clamp(Mathf.DeltaAngle(Quaternion.LookRotation(seat.Facing).eulerAngles.y, m_Yaw), -SeatedLookLimit, SeatedLookLimit);
+            transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
+            m_BodyYaw = m_Yaw;
             cameraPivot.localPosition = new Vector3(0f, m_EyeHeight, 0f);
             m_Controller.enabled = true;
             m_Velocity = Vector3.zero;
@@ -575,9 +668,9 @@ namespace GlassRoom
         void StepOn(StandUpScooter scooter)
         {
             // Someone else is riding it.
-            if (Multiplayer.ScooterRiddenByOther) return;
+            if (Multiplayer.ScooterRiddenByOther(scooter)) return;
             scooter.TakeBackControl();
-            Multiplayer.ClaimScooter();
+            Multiplayer.ClaimScooter(scooter);
             m_Ride = scooter;
             m_RideSpeed = 0f;
             m_Velocity = Vector3.zero;
@@ -600,6 +693,7 @@ namespace GlassRoom
             m_RideTurn = 0f;
             m_Pitch = scooter.ridePitch;
             scooter.SetRidden(true);
+            SharedSounds.Raise(SharedSound.ScooterOn, Multiplayer.ScooterIndex(scooter), scooter.transform.position, 0.9f);
         }
 
         void StepOff()
@@ -608,6 +702,7 @@ namespace GlassRoom
             if (scooter == null) return;
             m_Ride = null;
             scooter.SetRidden(false);
+            SharedSounds.Raise(SharedSound.ScooterOff, Multiplayer.ScooterIndex(scooter), scooter.transform.position, 0.9f);
 
             // Step off to the left if there's room, otherwise the right, otherwise behind.
             Vector3 origin = scooter.transform.position;
@@ -635,6 +730,7 @@ namespace GlassRoom
             m_Yaw += m_RideLookYaw;
             m_RideLookYaw = 0f;
             transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
+            m_BodyYaw = m_Yaw;
             cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
             cameraPivot.localPosition = new Vector3(0f, m_EyeHeight, 0f);
         }

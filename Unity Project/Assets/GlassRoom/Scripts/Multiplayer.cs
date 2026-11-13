@@ -114,10 +114,9 @@ namespace GlassRoom
             foreach (var p in Players)
                 if (p != null) Debug.Log("  " + p.Describe());
             var radio = FindAnyObjectByType<MusicSpeaker>();
-            var scooter = FindAnyObjectByType<StandUpScooter>();
             if (BloodTracks.Instance != null) Debug.Log($"  marks {BloodTracks.Instance.MarkCount}, from others {BloodTracks.Instance.RemoteMarks}");
             if (radio != null) Debug.Log($"  radio on {radio.IsOn} track {radio.CurrentTrack} at {radio.Position:F1}s");
-            if (scooter != null) Debug.Log($"  scooter at {scooter.transform.position:F2} yaw {scooter.transform.eulerAngles.y:F0} remote {scooter.RemoteControlled}");
+            foreach (var sc in Scooters) Debug.Log($"  {sc.name} at {sc.transform.position:F2} yaw {sc.transform.eulerAngles.y:F0} remote {sc.RemoteControlled}");
         }
 
         /// <summary>For testing: walks for a while, e.g. SendMessage("Multiplayer", "TestWalk", "0 1 2 run").</summary>
@@ -155,20 +154,24 @@ namespace GlassRoom
         // ---- Chairs ----
 
         /// <summary>A chair's number, the same for everyone (by where it stands).</summary>
-        public static int SeatIndex(Seat seat)
+        public static int SeatIndex(Seat seat) => seat == null ? -1 : System.Array.IndexOf(Seats, seat);
+
+        static Seat[] Seats
         {
-            if (seat == null) return -1;
-            if (s_Seats == null || s_Seats.Length == 0 || System.Array.IndexOf(s_Seats, null) >= 0)
+            get
             {
-                s_Seats = FindObjectsByType<Seat>(FindObjectsInactive.Exclude);
-                System.Array.Sort(s_Seats, (a, b) =>
+                if (s_Seats == null || s_Seats.Length == 0 || System.Array.IndexOf(s_Seats, null) >= 0)
                 {
-                    Vector3 pa = a.transform.position, pb = b.transform.position;
-                    int c = pa.x.CompareTo(pb.x);
-                    return c != 0 ? c : pa.z.CompareTo(pb.z);
-                });
+                    s_Seats = FindObjectsByType<Seat>(FindObjectsInactive.Exclude);
+                    System.Array.Sort(s_Seats, (a, b) =>
+                    {
+                        Vector3 pa = a.transform.position, pb = b.transform.position;
+                        int c = pa.x.CompareTo(pb.x);
+                        return c != 0 ? c : pa.z.CompareTo(pb.z);
+                    });
+                }
+                return s_Seats;
             }
-            return System.Array.IndexOf(s_Seats, seat);
         }
 
         public static bool SeatTakenByOther(Seat seat)
@@ -180,36 +183,62 @@ namespace GlassRoom
             return false;
         }
 
-        // ---- Scooter ----
+        // ---- Scooters ----
 
-        public static bool ScooterRiddenByOther
+        /// <summary>How many scooters the network keeps track of.</summary>
+        public const int MaxScooters = 4;
+        static StandUpScooter[] s_Scooters;
+
+        /// <summary>The scooters, numbered the same for everyone (by where they start out).</summary>
+        public static StandUpScooter[] Scooters
         {
             get
             {
-                foreach (var p in Players)
-                    if (p != null && !p.IsLocal && p.Riding) return true;
-                return false;
+                if (s_Scooters == null || System.Array.IndexOf(s_Scooters, null) >= 0)
+                {
+                    var found = FindObjectsByType<StandUpScooter>(FindObjectsInactive.Exclude);
+                    System.Array.Sort(found, (a, b) => string.CompareOrdinal(a.name, b.name));
+                    if (found.Length > MaxScooters) System.Array.Resize(ref found, MaxScooters);
+                    s_Scooters = found;
+                }
+                return s_Scooters;
             }
         }
 
-        /// <summary>You've stepped on the scooter: from now on everyone follows yours.</summary>
-        public static void ClaimScooter()
+        public static int ScooterIndex(StandUpScooter scooter) => scooter == null ? -1 : System.Array.IndexOf(Scooters, scooter);
+        public static StandUpScooter ScooterAt(int index) => index >= 0 && index < Scooters.Length ? Scooters[index] : null;
+
+        public static bool ScooterRiddenByOther(StandUpScooter scooter)
         {
-            if (Local != null) Local.ClaimScooter(HighestScooterVersion() + 1);
+            int index = ScooterIndex(scooter);
+            if (index < 0) return false;
+            foreach (var p in Players)
+                if (p != null && !p.IsLocal && p.Riding && p.RideIndex == index) return true;
+            return false;
         }
 
-        public static int HighestScooterVersion()
+        /// <summary>You've stepped on this scooter: from now on everyone follows yours.</summary>
+        public static void ClaimScooter(StandUpScooter scooter)
+        {
+            int index = ScooterIndex(scooter);
+            if (Local != null && index >= 0) Local.ClaimScooter(index, HighestScooterVersion(index) + 1);
+        }
+
+        public static int HighestScooterVersion(int index)
         {
             int v = 0;
-            foreach (var p in Players) if (p != null) v = Mathf.Max(v, p.ScooterVersion);
+            foreach (var p in Players) if (p != null && p.Object != null && p.Object.IsValid) v = Mathf.Max(v, p.ScooterVersions[index]);
             return v;
         }
 
         /// <summary>
-        /// Whose scooter everyone follows: whoever stepped on it last (the earliest player to
-        /// join, if nobody has yet).
+        /// Whose copy of a scooter everyone follows: whoever stepped on it last (the earliest
+        /// player to join, if nobody has yet).
         /// </summary>
-        public static NetworkPlayer ScooterOwner() => Best(p => p.ScooterVersion);
+        public static NetworkPlayer ScooterOwner(int index) => Best(p => p.ScooterVersions[index]);
+
+        /// <summary>A chair by its number.</summary>
+        public static Seat SeatAt(int index) => index >= 0 && index < Seats.Length ? Seats[index] : null;
 
         // ---- Radio ----
 
@@ -222,6 +251,9 @@ namespace GlassRoom
 
         /// <summary>Whose radio everyone follows: whoever pressed it last (else the earliest to join).</summary>
         public static NetworkPlayer MusicReference() => Best(p => p.MusicVersion);
+
+        /// <summary>The player who has been in the room longest (lowest number).</summary>
+        public static NetworkPlayer Oldest() => Best(p => 0);
 
         static NetworkPlayer Best(System.Func<NetworkPlayer, int> version)
         {

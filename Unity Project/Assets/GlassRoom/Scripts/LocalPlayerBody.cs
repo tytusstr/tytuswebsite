@@ -42,8 +42,10 @@ namespace GlassRoom
         void LateUpdate()
         {
             if (m_Avatar == null) return;
-            PlayerAvatar.Placement(transform.position, m_Player.Yaw, m_Player.CurrentSeat, m_Player.CurrentRide, out var feet, out var yaw);
+            PlayerAvatar.Placement(transform.position, m_Player.BodyYaw, m_Player.CurrentSeat, m_Player.CurrentRide, out var feet, out var yaw);
             m_Avatar.Pose(feet, yaw, m_Player.GroundSpeed, m_Player.CurrentSeat != null, Time.deltaTime);
+            m_Avatar.Look(m_Player.HeadYaw, m_Player.HeadPitch);
+            m_Avatar.Hold(m_Player.CurrentRide);
         }
 
         void OnDestroy()

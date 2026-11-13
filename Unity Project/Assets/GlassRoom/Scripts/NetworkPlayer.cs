@@ -1,3 +1,4 @@
+using System.Collections;
 using Fusion;
 using UnityEngine;
 
@@ -5,10 +6,11 @@ namespace GlassRoom
 {
     /// <summary>
     /// One person in the shared room. Yours shares where you are and what you're doing (walking,
-    /// running, sitting in which chair, riding the scooter), which person you look like, the
-    /// scooter's position after you've ridden it, and what the radio is playing. Everyone else's
-    /// shows up here as a real person (PlayerAvatar) moving smoothly, with their footsteps,
-    /// their bloody prints and tracks, and their squelches.
+    /// running, jumping, sitting in which chair, riding which scooter), where your head is
+    /// looking, which person you look like, the scooters as you last left them, what the radio
+    /// is playing, and the sounds you make. Everyone else's shows up here as a real person
+    /// (PlayerAvatar) moving smoothly, with their footsteps and other sounds, their bloody prints
+    /// and tracks, and their squelches. Someone joining later is sent the prints already made.
     /// </summary>
     [RequireComponent(typeof(NetworkObject))]
     public class NetworkPlayer : NetworkBehaviour
@@ -18,12 +20,15 @@ namespace GlassRoom
         [Networked] public NetworkBool Seated { get; set; }
         [Networked] public int SeatIndex { get; set; }
         [Networked] public NetworkBool Riding { get; set; }
+        [Networked] public int RideIndex { get; set; }
+        [Networked] public float HeadYaw { get; set; }
+        [Networked] public float HeadPitch { get; set; }
 
-        // The scooter as this player last left it (everyone follows the newest).
-        [Networked] public int ScooterVersion { get; set; }
-        [Networked] public Vector3 ScooterPosition { get; set; }
-        [Networked] public float ScooterYaw { get; set; }
-        [Networked] public float ScooterSpeed { get; set; }
+        // The scooters as this player last left them (everyone follows the newest of each).
+        [Networked, Capacity(Multiplayer.MaxScooters)] public NetworkArray<int> ScooterVersions => default;
+        [Networked, Capacity(Multiplayer.MaxScooters)] public NetworkArray<Vector3> ScooterPositions => default;
+        [Networked, Capacity(Multiplayer.MaxScooters)] public NetworkArray<float> ScooterYaws => default;
+        [Networked, Capacity(Multiplayer.MaxScooters)] public NetworkArray<float> ScooterSpeeds => default;
 
         // The radio as this player hears it (everyone follows whoever pressed it last).
         [Networked] public int MusicVersion { get; set; }
@@ -37,7 +42,6 @@ namespace GlassRoom
         FirstPersonController m_Me;
         LocalPlayerBody m_MyBody;
         MusicSpeaker m_Radio;
-        StandUpScooter m_Scooter;
         PlayerAvatar m_Avatar;
         int m_AvatarShown = -1;
         AudioSource m_Steps;
@@ -50,17 +54,18 @@ namespace GlassRoom
             Multiplayer.Players.Add(this);
             m_Me = FindAnyObjectByType<FirstPersonController>();
             m_Radio = FindAnyObjectByType<MusicSpeaker>();
-            m_Scooter = FindAnyObjectByType<StandUpScooter>();
             m_LastPosition = transform.position;
             if (HasStateAuthority)
             {
                 Multiplayer.Local = this;
                 m_MyBody = m_Me != null ? m_Me.GetComponent<LocalPlayerBody>() : null;
                 SeatIndex = -1;
+                RideIndex = -1;
                 MusicTrack = -1;
                 if (m_Radio != null) m_Radio.UserChanged += OnRadioPressed;
                 BloodTracks.MarkPlaced += OnMarkPlaced;
                 BloodTracks.Squelched += OnSquelched;
+                SharedSounds.Played += OnSound;
             }
             else
             {
@@ -72,6 +77,10 @@ namespace GlassRoom
                 m_Steps.minDistance = 1.5f;
                 m_Steps.maxDistance = 30f;
                 m_Steps.rolloffMode = AudioRolloffMode.Logarithmic;
+                // Someone new: if you've been here longest, pass on the prints already made.
+                var me = Multiplayer.Local;
+                if (me != null && me != this && PlayerId > me.PlayerId && me == Multiplayer.Oldest())
+                    me.StartCoroutine(me.SendMarksTo(Object.StateAuthority));
             }
         }
 
@@ -82,11 +91,12 @@ namespace GlassRoom
             if (m_Radio != null) m_Radio.UserChanged -= OnRadioPressed;
             BloodTracks.MarkPlaced -= OnMarkPlaced;
             BloodTracks.Squelched -= OnSquelched;
+            SharedSounds.Played -= OnSound;
             if (m_Avatar != null) Destroy(m_Avatar.gameObject);
         }
 
         public string Describe() =>
-            $"player {PlayerId} local {IsLocal} at {transform.position:F2} yaw {transform.eulerAngles.y:F0} speed {Speed:F1} seated {Seated} riding {Riding} avatar {(m_Avatar != null ? m_Avatar.transform.position.ToString("F2") + (m_Avatar.gameObject.activeInHierarchy ? " shown" : " hidden") : "none")}";
+            $"player {PlayerId} local {IsLocal} at {transform.position:F2} yaw {transform.eulerAngles.y:F0} head {HeadYaw:F0}/{HeadPitch:F0} speed {Speed:F1} seated {Seated} ({SeatIndex}) riding {Riding} ({RideIndex}) avatar {(m_Avatar != null ? m_Avatar.transform.position.ToString("F2") + " yaw " + m_Avatar.transform.eulerAngles.y.ToString("F0") : "none")}";
 
         // ---- You: share your state every network tick ----
 
@@ -94,24 +104,30 @@ namespace GlassRoom
         {
             if (!HasStateAuthority || m_Me == null) return;
             AvatarIndex = m_MyBody != null ? m_MyBody.AvatarIndex : 0;
-            PlayerAvatar.Placement(m_Me.transform.position, m_Me.Yaw, m_Me.CurrentSeat, m_Me.CurrentRide, out var feet, out var yaw);
+            PlayerAvatar.Placement(m_Me.transform.position, m_Me.BodyYaw, m_Me.CurrentSeat, m_Me.CurrentRide, out var feet, out var yaw);
             transform.SetPositionAndRotation(feet, Quaternion.Euler(0f, yaw, 0f));
             Speed = m_Me.GroundSpeed;
             Seated = m_Me.CurrentSeat != null;
             SeatIndex = Seated ? Multiplayer.SeatIndex(m_Me.CurrentSeat) : -1;
             Riding = m_Me.CurrentRide != null;
+            RideIndex = Riding ? Multiplayer.ScooterIndex(m_Me.CurrentRide) : -1;
+            HeadYaw = m_Me.HeadYaw;
+            HeadPitch = m_Me.HeadPitch;
 
-            // The scooter: if everyone follows yours, keep them up to date with it.
-            if (m_Scooter != null && Multiplayer.ScooterOwner() == this && !m_Scooter.RemoteControlled)
+            // The scooters everyone follows yours of: keep them up to date.
+            var scooters = Multiplayer.Scooters;
+            for (int i = 0; i < scooters.Length; i++)
             {
-                ScooterPosition = m_Scooter.transform.position;
-                ScooterYaw = m_Scooter.transform.eulerAngles.y;
-                ScooterSpeed = m_Scooter.Speed;
+                var scooter = scooters[i];
+                if (scooter == null || scooter.RemoteControlled || Multiplayer.ScooterOwner(i) != this) continue;
+                ScooterPositions.Set(i, scooter.transform.position);
+                ScooterYaws.Set(i, scooter.transform.eulerAngles.y);
+                ScooterSpeeds.Set(i, scooter.Speed);
             }
             SyncRadio();
         }
 
-        public void ClaimScooter(int version) => ScooterVersion = version;
+        public void ClaimScooter(int index, int version) => ScooterVersions.Set(index, version);
 
         // Follow whoever pressed the radio last (or the first person in the room), quietly and
         // only when ours is noticeably different; then share what ours is doing.
@@ -140,7 +156,7 @@ namespace GlassRoom
             if (Object != null && Object.IsValid && HasStateAuthority) MusicVersion = Multiplayer.HighestMusicVersion() + 1;
         }
 
-        // Your prints, tracks and squelches, sent to everyone else.
+        // Your prints, tracks, squelches and other sounds, sent to everyone else.
         void OnMarkPlaced(bool tyre, Vector3 at, float yaw, Vector3 size, float strength, bool mirror)
         {
             if (Object != null && Object.IsValid && HasStateAuthority) RPC_Mark(tyre, at, yaw, size, strength, mirror);
@@ -149,6 +165,11 @@ namespace GlassRoom
         void OnSquelched(Vector3 at, float loudness)
         {
             if (Object != null && Object.IsValid && HasStateAuthority) RPC_Squelch(at, loudness);
+        }
+
+        void OnSound(SharedSound sound, int index, Vector3 at, float volume)
+        {
+            if (Object != null && Object.IsValid && HasStateAuthority) RPC_Sound((byte)sound, index, at, volume);
         }
 
         [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
@@ -163,15 +184,47 @@ namespace GlassRoom
             if (BloodTracks.Instance != null) BloodTracks.Instance.SquelchAt(at, loudness);
         }
 
+        [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
+        void RPC_Sound(byte sound, int index, Vector3 at, float volume) => SharedSounds.PlayRemote((SharedSound)sound, index, at, volume);
+
+        // ---- Someone new: the prints and tracks already on the floor ----
+
+        IEnumerator SendMarksTo(PlayerRef player)
+        {
+            // Give them a moment to finish joining, then send a few each frame.
+            yield return new WaitForSeconds(2f);
+            if (BloodTracks.Instance == null) yield break;
+            var marks = BloodTracks.Instance.AllMarks();
+            int sent = 0;
+            foreach (var m in marks)
+            {
+                if (Object == null || !Object.IsValid) yield break;
+                RPC_MarkFor(player, m.tyre, m.at, m.yaw, m.size, m.strength, m.mirror);
+                if (++sent % 12 == 0) yield return null;
+            }
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_MarkFor([RpcTarget] PlayerRef player, NetworkBool tyre, Vector3 at, float yaw, Vector3 size, float strength, NetworkBool mirror)
+        {
+            if (BloodTracks.Instance != null) BloodTracks.Instance.PlaceRemote(tyre, at, yaw, size, strength, mirror);
+        }
+
         // ---- Everyone else: show them ----
 
         public override void Render()
         {
             if (HasStateAuthority) return;
 
-            // The scooter follows them if they rode it last.
-            if (m_Scooter != null && Multiplayer.ScooterOwner() == this && (m_Me == null || m_Me.CurrentRide == null))
-                m_Scooter.FollowRemote(ScooterPosition, ScooterYaw, ScooterSpeed, Riding);
+            // Scooters follow them if they rode them last.
+            var scooters = Multiplayer.Scooters;
+            for (int i = 0; i < scooters.Length; i++)
+            {
+                var scooter = scooters[i];
+                if (scooter == null || Multiplayer.ScooterOwner(i) != this) continue;
+                if (m_Me != null && m_Me.CurrentRide == scooter) continue;
+                scooter.FollowRemote(ScooterPositions[i], ScooterYaws[i], ScooterSpeeds[i], Riding && RideIndex == i);
+            }
 
             if (m_AvatarShown != AvatarIndex || m_Avatar == null)
             {
@@ -188,7 +241,17 @@ namespace GlassRoom
                 body.radius = 0.25f;
                 m_AvatarShown = AvatarIndex;
             }
-            m_Avatar.Pose(transform.position, transform.eulerAngles.y, Speed, Seated, Time.deltaTime);
+
+            // On a scooter they stand exactly on the deck wherever it's shown, holding its
+            // handlebar; in a chair, exactly in the seat.
+            var ride = Riding ? Multiplayer.ScooterAt(RideIndex) : null;
+            var seat = Seated ? Multiplayer.SeatAt(SeatIndex) : null;
+            Vector3 feet = transform.position;
+            float yaw = transform.eulerAngles.y;
+            if (ride != null || seat != null) PlayerAvatar.Placement(feet, yaw, seat, ride, out feet, out yaw);
+            m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime);
+            m_Avatar.Look(HeadYaw, HeadPitch);
+            m_Avatar.Hold(ride);
             Footsteps();
         }
 

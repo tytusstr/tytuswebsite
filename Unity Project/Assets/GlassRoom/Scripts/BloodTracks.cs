@@ -100,6 +100,30 @@ namespace GlassRoom
             Destroy(go, clip.length + 0.2f);
         }
 
+        public struct MarkInfo { public bool tyre; public Vector3 at; public float yaw; public Vector3 size; public float strength; public bool mirror; }
+
+        /// <summary>Every print and track on the floor, oldest first (for someone who joins later).</summary>
+        public List<MarkInfo> AllMarks()
+        {
+            var list = new List<MarkInfo>();
+            for (int i = 0; i < m_Marks.Count; i++)
+            {
+                var m = m_Marks[(m_NextMark + i) % m_Marks.Count];
+                if (m.t == null || !m.r.enabled) continue;
+                Vector3 scale = m.t.localScale;
+                list.Add(new MarkInfo
+                {
+                    tyre = m.r.sharedMaterial == m_TyreMat,
+                    at = m.t.position,
+                    yaw = m.t.eulerAngles.y,
+                    size = new Vector3(Mathf.Abs(scale.x), 1f, scale.z),
+                    strength = m.strength,
+                    mirror = scale.x < 0f,
+                });
+            }
+            return list;
+        }
+
         /// <summary>Prints and tracks on the floor (testing).</summary>
         public int MarkCount { get { int n = 0; foreach (var m in m_Marks) if (m.t != null && m.t.gameObject.activeSelf) n++; return n; } }
         public int RemoteMarks { get; private set; }

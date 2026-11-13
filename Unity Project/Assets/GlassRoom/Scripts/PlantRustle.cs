@@ -76,7 +76,9 @@ namespace GlassRoom
             if (clips.Length > 1 && pick == m_Last) pick = (pick + 1) % clips.Length;
             m_Last = pick;
             m_Source.pitch = Random.Range(0.92f, 1.08f);
-            m_Source.PlayOneShot(clips[pick], volume * Mathf.Clamp01(0.5f + speed / 6f));
+            float loudness = volume * Mathf.Clamp01(0.5f + speed / 6f);
+            m_Source.PlayOneShot(clips[pick], loudness);
+            SharedSounds.Raise(SharedSound.Rustle, pick, transform.position + Vector3.up * 0.5f, loudness);
             // Faster movement, quicker rustles.
             m_NextRustle = Time.time + Mathf.Lerp(0.55f, 0.28f, Mathf.InverseLerp(1f, 6f, speed));
         }

@@ -46,6 +46,8 @@ namespace GlassRoom.Editor
         // The scooter waits a few steps ahead and to the right of where you start.
         static readonly Vector3 k_ScooterPosition = new Vector3(3f, 0f, -30f);
         const float ScooterYaw = 20f;
+        const int ScooterCount = 4;
+        const float ScooterSpacing = 1f;
 
         /// <summary>
         /// Brings the open scene up to date without rebuilding it, so objects deleted by hand stay
@@ -85,8 +87,23 @@ namespace GlassRoom.Editor
             if (speaker != null) GlassRoomProps.AssignPlaylist(speaker);
             else if (nook != null) GlassRoomProps.AddSpeaker(nook, new Vector3(Width / 2f, 0f, -Length / 2f));
 
-            var scooter = Object.FindAnyObjectByType<StandUpScooter>();
-            if (scooter != null)
+            var original = hall.transform.Find("Scooter") != null ? hall.transform.Find("Scooter").GetComponent<StandUpScooter>() : Object.FindAnyObjectByType<StandUpScooter>();
+            if (original == null) original = StandUpScooterBuilder.Build(hall.transform, k_ScooterPosition, ScooterYaw).GetComponent<StandUpScooter>();
+            // Four scooters side by side, all at the same slight angle: copies of the original.
+            for (int i = 1; i < ScooterCount; i++)
+            {
+                string name = "Scooter " + (i + 1);
+                if (hall.transform.Find(name) != null) continue;
+                var copy = Object.Instantiate(original.gameObject, hall.transform);
+                copy.name = name;
+                copy.transform.SetPositionAndRotation(original.transform.position + new Vector3(ScooterSpacing * i, 0f, 0f), original.transform.rotation);
+            }
+            foreach (var seat in Object.FindObjectsByType<Seat>(FindObjectsInactive.Include))
+            {
+                seat.WorkOutFacing();
+                EditorUtility.SetDirty(seat);
+            }
+            foreach (var scooter in Object.FindObjectsByType<StandUpScooter>(FindObjectsInactive.Include))
             {
                 StandUpScooterBuilder.AssignSounds(scooter);
                 StandUpScooterBuilder.AssignColliders(scooter);
@@ -96,7 +113,6 @@ namespace GlassRoom.Editor
                 scooter.headlightIntensity = 14f; // bright enough to show on the dark floor
                 EditorUtility.SetDirty(scooter);
             }
-            else StandUpScooterBuilder.Build(hall.transform, k_ScooterPosition, ScooterYaw);
 
             // Scene objects keep the values they were saved with, so pass on the new defaults.
             var player = Object.FindAnyObjectByType<FirstPersonController>();
