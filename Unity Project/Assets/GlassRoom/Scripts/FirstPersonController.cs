@@ -334,9 +334,15 @@ namespace GlassRoom
 
             if (InputModeManager.Mode == ControlMode.Touchscreen)
             {
-                // The stick sets the direction and how far it's pushed sets the speed, up to the
-                // same walking speed as on a computer; there's no running on touch.
+                // The stick sets the direction and how far it's pushed sets the speed. The Sprint
+                // button turns sprinting on until it's tapped again or you stop moving.
                 move = m_Hud.Joystick.Value;
+                // (Tapping it before moving is fine: it waits until you've moved, then stopped.)
+                bool movingNow = move.sqrMagnitude >= 0.01f;
+                if (!m_Hud.SprintOn) m_SprintMoved = false;
+                else if (movingNow) m_SprintMoved = true;
+                else if (m_SprintMoved) { m_Hud.SetSprint(false); m_SprintMoved = false; }
+                run = m_Hud.SprintOn;
                 look = m_Hud.LookPad.ConsumeDelta() * touchSensitivity * LookSettings.Sensitivity;
                 m_JumpPressed = phoneJump;
                 // Mounting and the speaker are handled by the on-screen buttons (UpdatePrompts).
@@ -348,7 +354,16 @@ namespace GlassRoom
                 move.x = (Pressed(keyboard.dKey, keyboard.rightArrowKey) ? 1f : 0f) - (Pressed(keyboard.aKey, keyboard.leftArrowKey) ? 1f : 0f);
                 move.y = (Pressed(keyboard.wKey, keyboard.upArrowKey) ? 1f : 0f) - (Pressed(keyboard.sKey, keyboard.downArrowKey) ? 1f : 0f);
                 move = Vector2.ClampMagnitude(move, 1f);
-                run = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+                // Shift, or a quick double tap of W (or the up arrow) held down, sprints.
+                bool forwardPressed = keyboard.wKey.wasPressedThisFrame || keyboard.upArrowKey.wasPressedThisFrame;
+                bool forwardHeld = Pressed(keyboard.wKey, keyboard.upArrowKey);
+                if (forwardPressed)
+                {
+                    m_DoubleTapSprint = Time.unscaledTime - m_LastForwardTap < DoubleTapTime;
+                    m_LastForwardTap = Time.unscaledTime;
+                }
+                if (!forwardHeld) m_DoubleTapSprint = false;
+                run = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed || m_DoubleTapSprint;
                 // Holding Space keeps jumping: a new jump starts a moment after each landing.
                 m_JumpPressed = keyboard.spaceKey.wasPressedThisFrame
                     || (keyboard.spaceKey.isPressed && m_GroundedTime >= HeldJumpPause);
@@ -371,6 +386,12 @@ namespace GlassRoom
                 SetCursorLocked(true);
             }
         }
+
+        // Double-tapping forward to sprint: the second tap must come this soon after the first.
+        const float DoubleTapTime = 0.3f;
+        float m_LastForwardTap = -1f;
+        bool m_DoubleTapSprint;
+        bool m_SprintMoved;
 
         static bool Pressed(UnityEngine.InputSystem.Controls.KeyControl a, UnityEngine.InputSystem.Controls.KeyControl b) => a.isPressed || b.isPressed;
 
@@ -833,7 +854,7 @@ namespace GlassRoom
                 else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
                 else if (m_JumpHintShown < JumpHintSeconds + JumpHintFade)
-                    m_Hud.SetKeyHints(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade), ("Space", "to jump"));
+                    m_Hud.SetKeyHints(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade), ("Space", "to jump"), ("W W", "to sprint"));
                 else m_Hud.SetKeyHints();
                 return;
             }
@@ -843,6 +864,7 @@ namespace GlassRoom
             // You can't jump on the scooter or from a chair, so the Jump button goes away then;
             // and seated, there's no walking either, so the joystick goes too.
             m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null);
+            m_Hud.SetSprintVisible(m_Ride == null && m_Seat == null && !menu);
             m_Hud.SetJoystickVisible(m_Seat == null);
             if (menu) { m_Hud.SetContextButtons(); return; }
             if (m_Ride != null) { m_Hud.SetContextButtons(("Unmount", StepOff)); return; }

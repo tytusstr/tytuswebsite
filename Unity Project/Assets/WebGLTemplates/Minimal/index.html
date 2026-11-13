@@ -46,12 +46,26 @@
       100% { clip-path: inset(2% 0 88% 0); } }
     @media (prefers-reduced-motion: reduce) { #enter.glitch #label::before, #enter.glitch #label::after { animation: none; opacity: 0; } }
     #loading.ready #bar { opacity: 0; pointer-events: none; }
-    #loading.ready #enter { opacity: 1; pointer-events: auto; transform: none; }
+    #loading.ready #enter, #loading.ready #name { opacity: 1; pointer-events: auto; transform: none; }
+    /* The Enter button with the name box above it. */
+    #entry { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    /* Your name: the same thin outline as Enter; the hint text is faint until you type. */
+    #name { opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity 0.6s ease, transform 0.6s ease, border-color 0.25s ease;
+      width: 179px; box-sizing: border-box; padding: 14px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.35);
+      background: transparent; color: rgba(255,255,255,0.92); text-align: center; outline: none;
+      font: 500 14px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.04em;
+      -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; caret-color: #fff; }
+    #name::placeholder { color: rgba(255,255,255,0.38); }
+    #name:focus { border-color: rgba(255,255,255,0.75); }
+    #name:focus::placeholder { color: transparent; }
+    /* Pressed: waits (gently pulsing) while the game joins the room. */
+    #enter.joining { animation: joining 1s ease-in-out infinite; pointer-events: none; }
+    @keyframes joining { 50% { opacity: 0.45; } }
   </style>
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
-  <div id="loading"><div id="bar"><div id="fill"></div></div><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button></div>
+  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button></div></div>
   <script>
     // Browsers refuse to capture the mouse pointer until the player has clicked. The game asks
     // again on the first click, so a refusal is harmless; catch it here so Safari doesn't show
@@ -100,6 +114,12 @@
     // once it has drawn its first frame, because the loader's own "finished" signal sometimes
     // never arrives; a timer after the download completes is a backup.
     var enter = document.getElementById("enter");
+    // Your name: shown faintly in the box (the last one you used, or "Your name"); clicking the
+    // box clears it so you can type a new one.
+    var nameBox = document.getElementById("name");
+    var savedName = "";
+    try { savedName = localStorage.getItem("glassRoomName") || ""; } catch (e) {}
+    if (savedName) nameBox.placeholder = savedName;
     var ready = false, entered = false;
     window.gameCovered = true; // read by the game (see WebPage.jslib)
     // Until Enter is pressed nothing reaches the game: no keys, clicks, touches or wheel. These
@@ -110,6 +130,12 @@
         if (entered) return;
         // The Enter button itself, and the Enter / Space keys that press it, still work.
         if (e.target && e.target.closest && e.target.closest("#enter")) return;
+        // Typing in the name box works normally, but the game never sees it; Enter (the key) enters.
+        if (e.target && e.target.closest && e.target.closest("#name")) {
+          e.stopImmediatePropagation();
+          if (type === "keydown" && e.key === "Enter") { e.preventDefault(); if (ready) enterGame(); }
+          return;
+        }
         if (type === "keydown" && (e.key === "Enter" || e.key === " ")) { e.stopImmediatePropagation(); if (ready) { e.preventDefault(); enterGame(); } return; }
         e.stopImmediatePropagation();
       }, { capture: true, passive: false });
@@ -213,16 +239,31 @@
       if (entered && (e.key === "q" || e.key === "Q") && window.gamePointer.computer && window.gamePointer.menuOpen) capturePointer();
     }, true);
 
+    // Pressing Enter: the game first joins the shared room (to find out whether anyone else is
+    // playing, and how things stand), then reveals itself (window.revealGame, called by the
+    // game). Until then nothing plays and nothing can be clicked. A backup timer reveals the
+    // game anyway if joining takes too long.
     function enterGame() {
       if (!ready || entered) return;
       entered = true;
+      var typed = nameBox.value.replace(/\s+/g, " ").trim().slice(0, 16);
+      window.playerName = typed || savedName || "Player";
+      try { localStorage.setItem("glassRoomName", window.playerName); } catch (e) {}
+      nameBox.blur();
+      nameBox.disabled = true;
+      enter.classList.add("joining");
       if (window.gamePointer.computer) capturePointer();
+      window.gameEntered = true;
+      setTimeout(window.revealGame, 15000);
+    }
+    window.revealGame = function () {
+      if (!window.gameCovered) return;
       window.gameCovered = false;
       loading.style.opacity = "0";
       loading.style.pointerEvents = "none";
       setTimeout(function () { if (loading.parentNode) loading.remove(); }, 450);
       canvas.focus({ preventScroll: true });
-    }
+    };
     enter.addEventListener("click", enterGame);
     var backupTimer = null;
     var script = document.createElement("script");

@@ -104,11 +104,18 @@ namespace GlassRoom
         {
             if (!HasTrack(track)) return;
             if (m_Pending != null) { StopCoroutine(m_Pending); m_Pending = null; }
-            if (track != m_Current) PlayTrack(track, position);
-            else if (Mathf.Abs(Position - position) > 2f) Seek(position);
+            if (track != m_Current) { PlayTrack(track, position); m_LastSeek = Time.unscaledTime; }
+            // Jumps only when clearly out of step, and not again while a jump is still settling.
+            else if (Mathf.Abs(Position - position) > 2f && Time.unscaledTime - m_LastSeek > 3f)
+            {
+                Seek(position);
+                m_LastSeek = Time.unscaledTime;
+            }
             if (on && m_Paused) Resume();
             else if (!on && !m_Paused) Pause();
         }
+
+        float m_LastSeek = -10f;
 
         void Seek(float position)
         {
@@ -138,14 +145,25 @@ namespace GlassRoom
             m_Source.maxDistance = maxDistance;
         }
 
-        void Start()
-        {
-            if (playOnStart) PlayTrack(HasTrack(0) ? 0 : PickNext());
-            else ShowState();
-        }
+        // Nothing plays until you've pressed Enter and the game knows whether anyone else is in
+        // the room. Then: if someone else already has the radio going you hear theirs (see
+        // NetworkPlayer); otherwise it starts the first song from the beginning.
+        bool m_Started;
+
+        void Start() => ShowState();
 
         void Update()
         {
+            if (!m_Started)
+            {
+                if (m_Current >= 0) m_Started = true; // already following someone else's radio
+                else if (Multiplayer.RoomReady)
+                {
+                    m_Started = true;
+                    if (playOnStart && !Multiplayer.SomeoneElseHasMusic) PlayTrack(HasTrack(0) ? 0 : PickNext());
+                }
+                return;
+            }
             if (m_Paused || m_Current < 0 || m_Pending != null) return;
             if (m_Web)
             {

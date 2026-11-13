@@ -219,8 +219,8 @@ namespace GlassRoom
             }
             var grip = side < 0 ? m_LeftGrip : m_RightGrip;
             Vector3 p = grip != null ? grip.position : transform.TransformPoint(new Vector3(0.193f * side, 1.031f, 0.122f));
-            // The wrist sits just behind and above the middle of the grip.
-            return p - transform.forward * 0.03f + Vector3.up * 0.025f;
+            // The wrist sits behind the bar and a little above it, with the palm on top of it.
+            return p - transform.forward * 0.07f + Vector3.up * 0.03f;
         }
 
         /// <summary>This player has the scooter again (they've stepped on it).</summary>

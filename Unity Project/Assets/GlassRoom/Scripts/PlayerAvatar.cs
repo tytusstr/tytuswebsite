@@ -25,6 +25,11 @@ namespace GlassRoom
         Animator m_Animator;
         Transform m_Spine, m_Neck, m_Head;
         Transform m_LUpper, m_LFore, m_LHand, m_RUpper, m_RFore, m_RHand;
+        // Finger bones, per hand: [finger 0-4][segment 0-2]; finger 0 is the thumb.
+        readonly Transform[,] m_LFingers = new Transform[5, 3], m_RFingers = new Transform[5, 3];
+
+        /// <summary>The head bone (for the name above it).</summary>
+        public Transform Head => m_Head;
 
         float m_HeadYaw, m_HeadPitch, m_TargetHeadYaw, m_TargetHeadPitch;
         StandUpScooter m_Ride;
@@ -46,6 +51,16 @@ namespace GlassRoom
                     case "Bip01 R UpperArm": m_RUpper = t; break;
                     case "Bip01 R Forearm": m_RFore = t; break;
                     case "Bip01 R Hand": m_RHand = t; break;
+                }
+                // "Bip01 L Finger2", "Bip01 L Finger21", "Bip01 L Finger22": finger 2, segments 0-2.
+                if (t.name.StartsWith("Bip01 L Finger") || t.name.StartsWith("Bip01 R Finger"))
+                {
+                    string code = t.name.Substring("Bip01 L Finger".Length);
+                    if (code.Length >= 1 && code.Length <= 2 && char.IsDigit(code[0]) && (code.Length == 1 || char.IsDigit(code[1])))
+                    {
+                        int finger = code[0] - '0', segment = code.Length == 1 ? 0 : code[1] - '0';
+                        if (finger < 5 && segment < 3) (t.name[6] == 'L' ? m_LFingers : m_RFingers)[finger, segment] = t;
+                    }
                 }
             }
         }
@@ -102,9 +117,38 @@ namespace GlassRoom
         void HoldGrips(StandUpScooter scooter)
         {
             Vector3 left = scooter.GripPoint(-1), right = scooter.GripPoint(1);
-            Vector3 back = -scooter.transform.forward, down = Vector3.down;
+            Vector3 forward = scooter.transform.forward, back = -forward, down = Vector3.down;
             Reach(m_LUpper, m_LFore, m_LHand, left, -scooter.transform.right * 0.35f + back * 0.25f + down * 0.3f);
             Reach(m_RUpper, m_RFore, m_RHand, right, scooter.transform.right * 0.35f + back * 0.25f + down * 0.3f);
+            // An overhand grip: palm down on the bar, knuckles pointing forward, fingers and thumb
+            // closed round it.
+            Grip(m_LHand, m_LFingers, forward, -1f);
+            Grip(m_RHand, m_RFingers, forward, 1f);
+        }
+
+        // In these hands the fingers point along the hand's -X, the palm faces its +Y, fingers
+        // close by turning about their own -Z, and the thumb about -Y (left) or +Y (right).
+        static void Grip(Transform hand, Transform[,] fingers, Vector3 forward, float side)
+        {
+            if (hand == null) return;
+            Vector3 fingersDir = (forward - Vector3.up * 0.25f).normalized;
+            Vector3 palm = Vector3.ProjectOnPlane(Vector3.down + forward * 0.15f, fingersDir).normalized;
+            Vector3 x = -fingersDir, y = palm, z = Vector3.Cross(x, y);
+            hand.rotation = Quaternion.LookRotation(z, y);
+            for (int f = 1; f < 5; f++)
+            {
+                Curl(fingers[f, 0], Vector3.forward, -75f);
+                Curl(fingers[f, 1], Vector3.forward, -80f);
+                Curl(fingers[f, 2], Vector3.forward, -55f);
+            }
+            Curl(fingers[0, 0], Vector3.up, 30f * side);
+            Curl(fingers[0, 1], Vector3.forward, -30f);
+            Curl(fingers[0, 2], Vector3.forward, -35f);
+        }
+
+        static void Curl(Transform bone, Vector3 localAxis, float degrees)
+        {
+            if (bone != null) bone.localRotation = bone.localRotation * Quaternion.AngleAxis(degrees, localAxis);
         }
 
         // Two-bone reach: bends the elbow (towards the hint direction) so the hand lands on the target.

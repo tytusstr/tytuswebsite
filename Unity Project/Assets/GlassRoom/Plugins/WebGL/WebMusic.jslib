@@ -53,6 +53,7 @@ mergeInto(LibraryManager.library, {
       m.gain.gain.value = 0;
     }
     if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
+    m.pendingSeek = null;
     m.el.src = url;
     var p = m.el.play();
     var fadeIn = function () { if (m.wantPlay) m.fadeTo(m.volume, 0.08); };
@@ -108,16 +109,32 @@ mergeInto(LibraryManager.library, {
   },
 
   // Jumps the current song to a time (seconds), e.g. to match other players.
+  // A song that's still loading jumps there as soon as it can.
   WebMusic_Seek: function (seconds) {
     var m = window.__webMusic;
     if (!m) return;
-    try { m.el.currentTime = Math.max(0, seconds); } catch (e) {}
+    seconds = Math.max(0, seconds);
+    if (m.el.readyState < 1) {
+      if (m.pendingSeek == null) {
+        m.el.addEventListener("loadedmetadata", function apply() {
+          m.el.removeEventListener("loadedmetadata", apply);
+          if (m.pendingSeek != null) { try { m.el.currentTime = m.pendingSeek; } catch (e) {} }
+          m.pendingSeek = null;
+        });
+      }
+      m.pendingSeek = seconds;
+      return;
+    }
+    m.pendingSeek = null;
+    try { m.el.currentTime = seconds; } catch (e) {}
   },
 
   // How far into the current song it is, in seconds.
   WebMusic_Position: function () {
     var m = window.__webMusic;
-    return m && m.el ? (m.el.currentTime || 0) : 0;
+    if (!m || !m.el) return 0;
+    if (m.pendingSeek != null) return m.pendingSeek;
+    return m.el.currentTime || 0;
   },
 
   WebMusic_Ended: function () {

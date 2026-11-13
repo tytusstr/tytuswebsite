@@ -23,6 +23,7 @@ namespace GlassRoom
         public const string Sensitivity = "GlassRoom.Sensitivity";
         public const string LowGraphics = "GlassRoom.LowGraphics";
         public const string Hints = "GlassRoom.Hints";
+        public const string Names = "GlassRoom.Names";
         public const string Mouse = "GlassRoom.Mouse";
         public const string FieldOfView = "GlassRoom.FieldOfView";
 
@@ -50,6 +51,8 @@ namespace GlassRoom
                 LookSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(Sensitivity));
             if (PlayerPrefs.HasKey(Hints))
                 HintSettings.Enabled = PlayerPrefs.GetInt(Hints) != 0;
+            if (PlayerPrefs.HasKey(Names))
+                NameSettings.Enabled = PlayerPrefs.GetInt(Names) != 0;
             if (PlayerPrefs.HasKey(Mouse))
                 MouseSettings.Enabled = PlayerPrefs.GetInt(Mouse) != 0;
         }
@@ -166,6 +169,25 @@ namespace GlassRoom
             {
                 s_Enabled = value;
                 SavedSettings.SetInt(SavedSettings.Hints, value ? 1 : 0);
+            }
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => s_Enabled = true;
+    }
+
+    /// <summary>The "Names" switch: other players' names shown above their heads (on by default).</summary>
+    public static class NameSettings
+    {
+        static bool s_Enabled = true;
+
+        public static bool Enabled
+        {
+            get => s_Enabled;
+            set
+            {
+                s_Enabled = value;
+                SavedSettings.SetInt(SavedSettings.Names, value ? 1 : 0);
             }
         }
 

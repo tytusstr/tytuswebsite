@@ -16,6 +16,8 @@ namespace GlassRoom
     public class NetworkPlayer : NetworkBehaviour
     {
         [Networked] public int AvatarIndex { get; set; }
+        /// <summary>The name typed on the Enter screen, shown above their head.</summary>
+        [Networked] public NetworkString<_16> PlayerName { get; set; }
         [Networked] public float Speed { get; set; }
         [Networked] public NetworkBool Seated { get; set; }
         [Networked] public int SeatIndex { get; set; }
@@ -58,6 +60,8 @@ namespace GlassRoom
             if (HasStateAuthority)
             {
                 Multiplayer.Local = this;
+                string name = WebPage.PlayerName;
+                PlayerName = string.IsNullOrEmpty(name) ? "Player" : name;
                 m_MyBody = m_Me != null ? m_Me.GetComponent<LocalPlayerBody>() : null;
                 SeatIndex = -1;
                 RideIndex = -1;
@@ -95,8 +99,11 @@ namespace GlassRoom
             if (m_Avatar != null) Destroy(m_Avatar.gameObject);
         }
 
+        /// <summary>Their person in the room (null until shown).</summary>
+        public PlayerAvatar Avatar => m_Avatar;
+
         public string Describe() =>
-            $"player {PlayerId} local {IsLocal} at {transform.position:F2} yaw {transform.eulerAngles.y:F0} head {HeadYaw:F0}/{HeadPitch:F0} speed {Speed:F1} seated {Seated} ({SeatIndex}) riding {Riding} ({RideIndex}) avatar {(m_Avatar != null ? m_Avatar.transform.position.ToString("F2") + " yaw " + m_Avatar.transform.eulerAngles.y.ToString("F0") : "none")}";
+            $"player {PlayerId} '{PlayerName}' local {IsLocal} at {transform.position:F2} yaw {transform.eulerAngles.y:F0} head {HeadYaw:F0}/{HeadPitch:F0} speed {Speed:F1} seated {Seated} ({SeatIndex}) riding {Riding} ({RideIndex}) avatar {(m_Avatar != null ? m_Avatar.transform.position.ToString("F2") + " yaw " + m_Avatar.transform.eulerAngles.y.ToString("F0") : "none")}";
 
         // ---- You: share your state every network tick ----
 

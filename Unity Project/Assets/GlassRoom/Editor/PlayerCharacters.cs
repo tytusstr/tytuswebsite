@@ -94,6 +94,7 @@ namespace GlassRoom.Editor
             var idle = Clip(animDir + "m_idle_neutral_01.fbx", source, true);
             var walk = Clip(animDir + "m_walk_neutral_01.fbx", source, true);
             var run = Clip(animDir + "m_run_neutral_01.fbx", source, true);
+            var sprint = Clip(animDir + "m_run_fast_01.fbx", source, true);
             var sit = Clip(animDir + "m_sit_chair_idle_neutral_01.fbx", source, true);
 
             const string path = "Assets/GlassRoom/Models/Players/Player.controller";
@@ -107,9 +108,18 @@ namespace GlassRoom.Editor
             tree.blendType = BlendTreeType.Simple1D;
             tree.blendParameter = "Speed";
             tree.useAutomaticThresholds = false;
+            // Each clip at the speed (m/s) it was recorded moving, played a little faster or
+            // slower to match the game's speeds so the feet don't slide: walk 1.0, jog 2.9 and
+            // sprint 5.8 m/s in the recordings; the game walks at 2.1 and sprints at 5.65.
             tree.AddChild(idle, 0f);
-            tree.AddChild(walk, 1.7f);
-            tree.AddChild(run, 4.6f);
+            tree.AddChild(walk, 1.3f);
+            tree.AddChild(run, 2.9f);
+            tree.AddChild(sprint, 5.65f);
+            var children = tree.children;
+            children[1].timeScale = 1.3f / 1.01f;
+            children[2].timeScale = 1f;
+            children[3].timeScale = 5.65f / 5.84f;
+            tree.children = children;
             sm.defaultState = move;
 
             var seated = sm.AddState("Seated");

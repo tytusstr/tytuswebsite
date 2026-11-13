@@ -16,6 +16,8 @@ namespace GlassRoom
         public NetworkObject playerPrefab;
         public string sessionName = "glass-room";
         public int maxPlayers = 100;
+        /// <summary>Bump whenever NetworkPlayer's shared data changes.</summary>
+        public const int NetworkVersion = 3;
 
         public static Multiplayer Instance { get; private set; }
         /// <summary>Everyone in the room, you included.</summary>
@@ -33,15 +35,49 @@ namespace GlassRoom
         float m_RetryAt = -1f;
         bool m_Placed;
 
+        /// <summary>
+        /// True once the game can start: you've pressed Enter, joined the room (or found you
+        /// can't), and everyone already there has shown up, so you know how things stand.
+        /// Without a Multiplayer in the scene, as soon as the Enter screen is gone.
+        /// </summary>
+        public static bool RoomReady => Instance != null ? Instance.m_Ready : !WebPage.Covered;
+
+        /// <summary>True if anyone else in the room has the radio going (you then hear theirs).</summary>
+        public static bool SomeoneElseHasMusic
+        {
+            get
+            {
+                foreach (var p in Players)
+                    if (p != null && !p.IsLocal && p.Object != null && p.Object.IsValid && p.MusicTrack >= 0) return true;
+                return false;
+            }
+        }
+
+        bool m_Ready;
+        float m_EnteredAt = -1f, m_JoinedAt = -1f;
+        // Joining never holds the game back longer than this; the joined room waits at most this
+        // long for the people already there to show up.
+        const float JoinTimeout = 10f, ArrivalTimeout = 4f;
+
         void Update()
         {
-            // Join once the website's Enter screen is gone (in the editor, straight away).
+            // Join once Enter is pressed (in the editor, straight away).
             if (!m_Started)
             {
-                if (WebPage.Covered || playerPrefab == null) return;
+                if (!WebPage.Entered || playerPrefab == null) { if (playerPrefab == null && WebPage.Entered) MarkReady(); return; }
                 m_Started = true;
+                m_EnteredAt = Time.unscaledTime;
                 Connect();
                 return;
+            }
+            if (!m_Ready)
+            {
+                bool joined = m_JoinedAt >= 0f;
+                bool everyoneHere = joined && m_Runner != null && m_Runner.IsRunning && Local != null
+                                    && Players.Count >= CountActivePlayers();
+                if (everyoneHere || (joined && Time.unscaledTime - m_JoinedAt > ArrivalTimeout)
+                    || Time.unscaledTime - m_EnteredAt > JoinTimeout)
+                    MarkReady();
             }
             // Dropped (a browser pauses a page that's in the background, and the connection
             // times out): rejoin a few seconds after coming back.
@@ -58,6 +94,20 @@ namespace GlassRoom
 
         bool m_Connecting;
 
+        void MarkReady()
+        {
+            if (m_Ready) return;
+            m_Ready = true;
+            WebPage.Reveal();
+        }
+
+        int CountActivePlayers()
+        {
+            int n = 0;
+            foreach (var _ in m_Runner.ActivePlayers) n++;
+            return n;
+        }
+
         async void Connect()
         {
             m_Connecting = true;
@@ -70,7 +120,9 @@ namespace GlassRoom
                 result = await m_Runner.StartGame(new StartGameArgs
                 {
                     GameMode = GameMode.Shared,
-                    SessionName = sessionName,
+                    // Each version of what players share gets its own room, so an older copy of the
+                    // website still open somewhere never ends up in a room with a newer one.
+                    SessionName = sessionName + "-v" + NetworkVersion,
                     PlayerCount = maxPlayers,
                     SceneManager = go.AddComponent<NetworkSceneManagerDefault>(),
                 });
@@ -79,6 +131,7 @@ namespace GlassRoom
             {
                 Debug.LogWarning("Multiplayer: couldn't connect: " + e.Message);
                 m_Connecting = false;
+                MarkReady();
                 m_RetryAt = Time.unscaledTime + 10f;
                 return;
             }
@@ -86,6 +139,7 @@ namespace GlassRoom
             if (!result.Ok)
             {
                 Debug.LogWarning("Multiplayer: couldn't join: " + result.ShutdownReason);
+                MarkReady();
                 m_RetryAt = Time.unscaledTime + 10f;
                 return;
             }
@@ -104,6 +158,7 @@ namespace GlassRoom
             }
             Vector3 at = me != null ? me.transform.position : Vector3.zero;
             m_Runner.Spawn(playerPrefab, at, Quaternion.identity, m_Runner.LocalPlayer);
+            if (m_JoinedAt < 0f) m_JoinedAt = Time.unscaledTime;
         }
 
         /// <summary>For testing: logs where everyone is (unityGame.SendMessage("Multiplayer", "Dump")).</summary>

@@ -23,7 +23,27 @@ namespace GlassRoom
         public bool IsMenuOpen => m_Menu != null && m_Menu.activeSelf;
 
         bool m_JumpRequested;
-        GameObject m_JumpButton;
+        GameObject m_JumpButton, m_SprintButton;
+        Image m_SprintBg;
+        Text m_SprintText;
+
+        /// <summary>Phone: the Sprint button is switched on (tap to sprint, tap again or stop to walk).</summary>
+        public bool SprintOn { get; private set; }
+
+        public void SetSprint(bool on)
+        {
+            SprintOn = on;
+            if (m_SprintBg != null) m_SprintBg.color = on ? new Color(1f, 1f, 1f, 0.92f) : new Color(0.06f, 0.07f, 0.09f, 0.55f);
+            if (m_SprintText != null) m_SprintText.color = on ? k_Ink : Color.white;
+        }
+
+        /// <summary>Shows or hides the phone Sprint button (hidden while seated or riding).</summary>
+        public void SetSprintVisible(bool visible)
+        {
+            if (m_SprintButton == null || m_SprintButton.activeSelf == visible) return;
+            m_SprintButton.SetActive(visible);
+            if (!visible) SetSprint(false);
+        }
 
         /// <summary>Shows or hides the phone Jump button (hidden while riding); the other buttons drop into its place.</summary>
         /// <summary>Shows or hides the movement joystick (hidden while seated).</summary>
@@ -282,6 +302,15 @@ namespace GlassRoom
             AddText(jump, "Jump", 30, Color.white, FontStyle.Bold);
             m_JumpButton = jump.gameObject;
 
+            // Phone Sprint button, just left of Jump: tap to sprint, tap again to walk.
+            var sprint = NewRect("Sprint Button", m_TouchControls.transform, new Vector2(1f, 0f), new Vector2(1f, 0f));
+            sprint.sizeDelta = new Vector2(240f, 84f);
+            sprint.anchoredPosition = new Vector2(-420f, 140f);
+            m_SprintBg = AddImage(sprint.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.55f), UISprites.RoundedPanel, true, 42f);
+            sprint.gameObject.AddComponent<PressButton>().pressed = () => SetSprint(!SprintOn);
+            m_SprintText = AddText(sprint, "Sprint", 30, Color.white, FontStyle.Bold);
+            m_SprintButton = sprint.gameObject;
+
             // Other phone buttons, stacked above Jump (Mount, Play / Pause, ...).
             for (int i = 0; i < m_ContextButtons.Length; i++)
             {
@@ -436,7 +465,9 @@ namespace GlassRoom
             (m_LowButtonBg, m_LowButtonText) = AddChoice(lower, "Low", new Vector2(128f, -634f), () => SetGraphics(true));
             ShowGraphics(GraphicsQuality.Low);
 
-            AddSwitch(lower, -724f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on);
+            // Two switches side by side: key hints, and other players' names above their heads.
+            AddSwitch(lower, -724f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on, -135f, 230f);
+            AddSwitch(lower, -724f, "Names", () => NameSettings.Enabled, on => NameSettings.Enabled = on, 135f, 230f);
 
             var done = NewRect("Done", card, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
             done.sizeDelta = new Vector2(500f, 84f);
@@ -521,11 +552,12 @@ namespace GlassRoom
 
         // "Hints" with an on/off switch: a rounded track with a sliding knob, dark when on.
         // A labelled on/off switch row.
-        GameObject AddSwitch(RectTransform parent, float y, string title, System.Func<bool> get, System.Action<bool> set)
+        GameObject AddSwitch(RectTransform parent, float y, string title, System.Func<bool> get, System.Action<bool> set,
+            float x = 0f, float width = 500f)
         {
             var row = NewRect(title + " Row", parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
-            row.sizeDelta = new Vector2(500f, 56f);
-            row.anchoredPosition = new Vector2(0f, y);
+            row.sizeDelta = new Vector2(width, 56f);
+            row.anchoredPosition = new Vector2(x, y);
             var label = AddText(row, title, 26, k_Ink, FontStyle.Bold);
             label.alignment = TextAnchor.MiddleLeft;
 
