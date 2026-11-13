@@ -14,6 +14,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GlassRoom.PlayerAvatarLibrary
   avatars:
   - {fileID: 6921456561455548473, guid: 01b3cdb3ac04b4d31877b1d2dce52333, type: 3}
+  - {fileID: 6383520129094190605, guid: 8ad8c968d46bd4418954bb118d22784c, type: 3}
   - {fileID: 7426048110662236519, guid: 06de1bf084bea45b3a91dd5770022b17, type: 3}
+  - {fileID: 7073886210768128905, guid: 71862d48572664b43b72b9f50a99e65b, type: 3}
   - {fileID: 6287413252188008325, guid: 1c832709e9bf047cd9f865367840ae49, type: 3}
+  - {fileID: 797709924294821184, guid: d6f7ce2a7eb8345cbbea3618d6ab67fa, type: 3}
   - {fileID: 3656858176545581016, guid: 9efdc2694be5d4e1aa61bc8f60acd14a, type: 3}
+  - {fileID: 2742144051170091304, guid: ffc98e7a8f3ca4481b0c7a72c22204c7, type: 3}
+  - {fileID: 8760358769317593107, guid: 56ef4941312f14d619ddc77071203195, type: 3}
+  - {fileID: 9062619236658866584, guid: 3c51898ff22e24febbf5fd05d89b8630, type: 3}

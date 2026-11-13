@@ -101,6 +101,9 @@ namespace GlassRoom.Editor
             foreach (var seat in Object.FindObjectsByType<Seat>(FindObjectsInactive.Include))
             {
                 seat.WorkOutFacing();
+                seat.recline = 24f;
+                // The chair's real shape, not a shrink-wrapped lid over it, so you can stand in the seat.
+                foreach (var c in seat.GetComponentsInChildren<MeshCollider>()) { c.convex = false; EditorUtility.SetDirty(c); }
                 EditorUtility.SetDirty(seat);
             }
             foreach (var scooter in Object.FindObjectsByType<StandUpScooter>(FindObjectsInactive.Include))
@@ -110,6 +113,8 @@ namespace GlassRoom.Editor
                 StandUpScooterBuilder.FitGrips(scooter);
                 // The saved scene keeps its old value otherwise.
                 scooter.humVolume = 0.125f;
+                scooter.maxSpeed = 7.8f;
+                scooter.acceleration = 4.3f;
                 scooter.headlightIntensity = 14f; // bright enough to show on the dark floor
                 EditorUtility.SetDirty(scooter);
             }

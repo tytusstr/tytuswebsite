@@ -49,8 +49,40 @@ namespace GlassRoom
         [Tooltip("Which way the chair faces along the floor (set by Tools > Glass Room > Apply Updates, from the chair's shape).")]
         public Vector3 facing;
 
-        /// <summary>Editor: works out <see cref="facing"/> from the chair's shape.</summary>
-        public void WorkOutFacing() => facing = FacingFromShape();
+        [Tooltip("Height of the cushion's top where you sit, in metres (set by Apply Updates from the chair's shape).")]
+        public float cushionHeight = 0.47f;
+        [Tooltip("How far the sitter leans back into the chair, in degrees.")]
+        public float recline = 24f;
+
+        /// <summary>Editor: works out <see cref="facing"/> and <see cref="cushionHeight"/> from the chair's shape.</summary>
+        public void WorkOutFacing()
+        {
+            facing = FacingFromShape();
+            cushionHeight = CushionFromShape();
+        }
+
+        // The lowest top surface in the middle of the seat, just in front of where the back starts.
+        float CushionFromShape()
+        {
+            Vector3 f = Facing, sit = SitPoint, side = Vector3.Cross(Vector3.up, f);
+            float best = float.MaxValue;
+            for (float d = 0.05f; d <= 0.3f; d += 0.05f)
+            {
+                float top = 0f;
+                foreach (var mf in GetComponentsInChildren<MeshFilter>())
+                {
+                    if (mf.sharedMesh == null) continue;
+                    foreach (var v in mf.sharedMesh.vertices)
+                    {
+                        var w = mf.transform.TransformPoint(v);
+                        if (Mathf.Abs(Vector3.Dot(w - sit, f) - d) < 0.05f && Mathf.Abs(Vector3.Dot(w - sit, side)) < 0.2f && w.y < 0.9f)
+                            top = Mathf.Max(top, w.y);
+                    }
+                }
+                if (top > 0f) best = Mathf.Min(best, top);
+            }
+            return best < float.MaxValue ? best - FloorPoint.y : cushionHeight;
+        }
 
         Vector3 FacingFromShape()
         {
@@ -81,6 +113,9 @@ namespace GlassRoom
 
         /// <summary>Where the sitter's hips go, on the floor (the middle of the seat).</summary>
         public Vector3 SitPoint => FloorPoint - Facing * 0.04f;
+
+        /// <summary>Where the sitter's hips are, in the seat.</summary>
+        public Vector3 HipPoint => SitPoint + Facing * 0.08f + Vector3.up * (cushionHeight + 0.1f);
 
         public void PlaySitSound()
         {

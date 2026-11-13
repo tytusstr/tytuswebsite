@@ -15,6 +15,7 @@ namespace GlassRoom
         [DllImport("__Internal")] static extern int WebPage_Entered();
         [DllImport("__Internal")] static extern void WebPage_Reveal();
         [DllImport("__Internal")] static extern string WebPage_PlayerName();
+        [DllImport("__Internal")] static extern void WebPage_EditName();
         /// <summary>True when running in a web page (where the page captures the pointer).</summary>
         public const bool InBrowser = true;
 #else
@@ -25,6 +26,7 @@ namespace GlassRoom
         static int WebPage_Entered() => 1;
         static void WebPage_Reveal() { }
         static string WebPage_PlayerName() => "";
+        static void WebPage_EditName() { }
         public const bool InBrowser = false;
 #endif
 
@@ -46,6 +48,9 @@ namespace GlassRoom
             s_Revealed = true;
             WebPage_Reveal();
         }
+
+        /// <summary>Opens the box for changing your name, over the game.</summary>
+        public static void EditName() => WebPage_EditName();
 
         /// <summary>The name typed on the Enter screen ("" if none).</summary>
         public static string PlayerName

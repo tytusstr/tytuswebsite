@@ -26,6 +26,11 @@ mergeInto(LibraryManager.library, {
     if (typeof window.revealGame === "function") window.revealGame();
   },
 
+  // Opens the page's "your name" box over the game (from the settings menu).
+  WebPage_EditName: function () {
+    if (typeof window.editName === "function") window.editName();
+  },
+
   // The name typed on the Enter screen.
   WebPage_PlayerName: function () {
     var name = String(window.playerName || "");

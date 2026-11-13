@@ -42,6 +42,7 @@ namespace GlassRoom
         public int PlayerId => Object != null ? Object.StateAuthority.PlayerId : int.MaxValue;
 
         FirstPersonController m_Me;
+        float m_NextNameCheck;
         LocalPlayerBody m_MyBody;
         MusicSpeaker m_Radio;
         PlayerAvatar m_Avatar;
@@ -60,8 +61,7 @@ namespace GlassRoom
             if (HasStateAuthority)
             {
                 Multiplayer.Local = this;
-                string name = WebPage.PlayerName;
-                PlayerName = string.IsNullOrEmpty(name) ? "Player" : name;
+                PlayerName = WebPage.PlayerName;
                 m_MyBody = m_Me != null ? m_Me.GetComponent<LocalPlayerBody>() : null;
                 SeatIndex = -1;
                 RideIndex = -1;
@@ -119,14 +119,33 @@ namespace GlassRoom
             Riding = m_Me.CurrentRide != null;
             RideIndex = Riding ? Multiplayer.ScooterIndex(m_Me.CurrentRide) : -1;
             HeadYaw = m_Me.HeadYaw;
+            // Your name, if you change it in the settings (checked about once a second).
+            if (Time.unscaledTime >= m_NextNameCheck)
+            {
+                m_NextNameCheck = Time.unscaledTime + 1f;
+                string name = WebPage.PlayerName;
+                if (PlayerName.ToString() != name) PlayerName = name;
+            }
             HeadPitch = m_Me.HeadPitch;
 
-            // The scooters everyone follows yours of: keep them up to date.
+            // Every scooter as you see it, shared. Everyone follows the copy of whoever stepped on it
+            // last; everyone else keeps a copy of where it is (one version lower), so if that
+            // person leaves, the next one takes over from the same spot and nothing jumps back.
             var scooters = Multiplayer.Scooters;
             for (int i = 0; i < scooters.Length; i++)
             {
                 var scooter = scooters[i];
-                if (scooter == null || scooter.RemoteControlled || Multiplayer.ScooterOwner(i) != this) continue;
+                if (scooter == null) continue;
+                var owner = Multiplayer.ScooterOwner(i);
+                if (owner == this)
+                {
+                    if (scooter.RemoteControlled && m_Me.CurrentRide != scooter) scooter.TakeBackControl();
+                }
+                else if (owner != null)
+                {
+                    int follow = Mathf.Max(0, owner.ScooterVersions[i] - 1);
+                    if (ScooterVersions[i] < follow) ScooterVersions.Set(i, follow);
+                }
                 ScooterPositions.Set(i, scooter.transform.position);
                 ScooterYaws.Set(i, scooter.transform.eulerAngles.y);
                 ScooterSpeeds.Set(i, scooter.Speed);
@@ -256,7 +275,7 @@ namespace GlassRoom
             Vector3 feet = transform.position;
             float yaw = transform.eulerAngles.y;
             if (ride != null || seat != null) PlayerAvatar.Placement(feet, yaw, seat, ride, out feet, out yaw);
-            m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime);
+            m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             m_Avatar.Look(HeadYaw, HeadPitch);
             m_Avatar.Hold(ride);
             Footsteps();
@@ -270,14 +289,14 @@ namespace GlassRoom
             m_LastPosition = p;
             if (Seated || Riding || Speed < 0.4f || moved > 2f) { m_StepDistance = 0f; return; }
             m_StepDistance += moved;
-            float stride = Speed > 4f ? 1.5f : 0.75f;
+            float stride = Speed > 3.5f ? 1.4f : 0.75f;
             if (m_StepDistance < stride) return;
             m_StepDistance = 0f;
             var clips = m_Me != null ? m_Me.footstepClips : null;
             if (clips == null || clips.Length == 0 || m_Steps == null) return;
             m_LeftFoot = !m_LeftFoot;
             m_Steps.pitch = m_Me.footstepPitch * Random.Range(0.95f, 1.04f);
-            m_Steps.PlayOneShot(clips[Random.Range(0, clips.Length)], m_Me.footstepVolume * (Speed > 4f ? 1f : 0.8f));
+            m_Steps.PlayOneShot(clips[Random.Range(0, clips.Length)], m_Me.footstepVolume * (Speed > 3.5f ? 1f : 0.8f));
         }
     }
 }

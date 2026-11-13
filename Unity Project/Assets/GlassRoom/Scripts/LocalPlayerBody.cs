@@ -1,11 +1,14 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace GlassRoom
 {
     /// <summary>
-    /// Your own body. Others see it (through the network), and you see it in the mirrors, in the
-    /// floor's reflection and in your shadow; your own view leaves it out (the camera is inside
-    /// its head). Which person you are is picked at random the first time and remembered.
+    /// Your own body. Others see it (through the network), and you see it in the floor's
+    /// reflection and in your shadow. Standing, your own view leaves it out (the camera is inside
+    /// its head); sitting in a chair, your view moves to its eyes and you can look down at
+    /// yourself. Which person you are is picked at random the first time and remembered; it can
+    /// be changed in the settings (Character).
     /// </summary>
     [RequireComponent(typeof(FirstPersonController))]
     public class LocalPlayerBody : MonoBehaviour
@@ -15,42 +18,111 @@ namespace GlassRoom
 
         FirstPersonController m_Player;
         PlayerAvatar m_Avatar;
+        Camera m_Camera;
+        int m_Layer = -1;
+        // The see-through parts (eyelashes), hidden while you look out through the eyes.
+        Material[] m_SeeThrough;
+        bool m_ShowingSelf;
 
         public int AvatarIndex { get; private set; }
         public PlayerAvatar Avatar => m_Avatar;
 
+        /// <summary>The local player's body (for the settings menu).</summary>
+        public static LocalPlayerBody Instance { get; private set; }
+
+        /// <summary>How many people there are to choose from.</summary>
+        public static int Choices
+        {
+            get
+            {
+                var library = PlayerAvatarLibrary.Instance;
+                return library != null && library.avatars != null ? library.avatars.Length : 0;
+            }
+        }
+
+        void Awake() => Instance = this;
+
         void Start()
         {
             m_Player = GetComponent<FirstPersonController>();
-            var library = PlayerAvatarLibrary.Instance;
-            if (library == null || library.avatars == null || library.avatars.Length == 0) return;
-            AvatarIndex = PlayerPrefs.GetInt(IndexKey, -1);
-            if (AvatarIndex < 0 || AvatarIndex >= library.avatars.Length)
+            m_Camera = GetComponentInChildren<Camera>();
+            m_Layer = LayerMask.NameToLayer(LayerName);
+            int count = Choices;
+            if (count == 0) return;
+            int index = PlayerPrefs.GetInt(IndexKey, -1);
+            if (index < 0 || index >= count)
             {
-                AvatarIndex = Random.Range(0, library.avatars.Length);
-                PlayerPrefs.SetInt(IndexKey, AvatarIndex);
+                index = Random.Range(0, count);
+                PlayerPrefs.SetInt(IndexKey, index);
                 PlayerPrefs.Save();
             }
+            Show(index);
+            RenderPipelineManager.beginCameraRendering += BeforeRender;
+        }
+
+        /// <summary>Becomes another person (remembered for next time; others see the change).</summary>
+        public void SetAvatar(int index)
+        {
+            int count = Choices;
+            if (count == 0) return;
+            index = ((index % count) + count) % count;
+            PlayerPrefs.SetInt(IndexKey, index);
+            PlayerPrefs.Save();
+            Show(index);
+        }
+
+        void Show(int index)
+        {
+            if (m_Avatar != null) Destroy(m_Avatar.gameObject);
+            AvatarIndex = index;
             // Not a child of the player: it's placed explicitly each frame (seated or riding it
             // sits elsewhere than the player's own transform).
-            m_Avatar = library.Spawn(AvatarIndex, null);
+            m_Avatar = PlayerAvatarLibrary.Instance.Spawn(index, null);
             m_Avatar.name = "My Body";
-            int layer = LayerMask.NameToLayer(LayerName);
-            if (layer >= 0) m_Avatar.SetLayer(layer);
+            if (m_Layer >= 0) m_Avatar.SetLayer(m_Layer);
+            var list = new System.Collections.Generic.List<Material>();
+            foreach (var r in m_Avatar.GetComponentsInChildren<Renderer>())
+                foreach (var m in r.materials)
+                    if (m != null && m.name.ToLowerInvariant().Contains("opacity")) list.Add(m);
+            m_SeeThrough = list.ToArray();
+            m_ShowingSelf = false;
         }
 
         void LateUpdate()
         {
             if (m_Avatar == null) return;
-            PlayerAvatar.Placement(transform.position, m_Player.BodyYaw, m_Player.CurrentSeat, m_Player.CurrentRide, out var feet, out var yaw);
-            m_Avatar.Pose(feet, yaw, m_Player.GroundSpeed, m_Player.CurrentSeat != null, Time.deltaTime);
+            var seat = m_Player.CurrentSeat;
+            PlayerAvatar.Placement(transform.position, m_Player.BodyYaw, seat, m_Player.CurrentRide, out var feet, out var yaw);
+            m_Avatar.Pose(feet, yaw, m_Player.GroundSpeed, seat != null, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             m_Avatar.Look(m_Player.HeadYaw, m_Player.HeadPitch);
             m_Avatar.Hold(m_Player.CurrentRide);
+            ShowSelf(seat != null);
+        }
+
+        // Sitting: your own camera draws your body too (without the eyelashes, which would sit
+        // right in front of your eyes).
+        void ShowSelf(bool show)
+        {
+            if (show == m_ShowingSelf || m_Camera == null || m_Layer < 0) return;
+            m_ShowingSelf = show;
+            if (show) m_Camera.cullingMask |= 1 << m_Layer;
+            else m_Camera.cullingMask &= ~(1 << m_Layer);
+            foreach (var m in m_SeeThrough)
+                if (m != null) m.SetFloat("_Cutoff", show ? 1.01f : 0.5f);
+        }
+
+        // Sitting, the view is from your body's eyes (after the body has been posed this frame).
+        void BeforeRender(ScriptableRenderContext context, Camera camera)
+        {
+            if (!m_ShowingSelf || camera != m_Camera || m_Avatar == null || m_Avatar.Head == null) return;
+            camera.transform.position = m_Avatar.Head.position + camera.transform.rotation * new Vector3(0f, 0.07f, 0.1f);
         }
 
         void OnDestroy()
         {
+            RenderPipelineManager.beginCameraRendering -= BeforeRender;
             if (m_Avatar != null) Destroy(m_Avatar.gameObject);
+            if (Instance == this) Instance = null;
         }
     }
 }

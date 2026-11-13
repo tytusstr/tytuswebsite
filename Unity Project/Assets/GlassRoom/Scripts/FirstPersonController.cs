@@ -15,7 +15,7 @@ namespace GlassRoom
 
         [Header("Movement")]
         public float walkSpeed = 2.14f;
-        public float runSpeed = 5.65f;
+        public float runSpeed = 4.52f;
         public float acceleration = 10f;
         public float gravity = 20f;
         [Tooltip("Upward speed when jumping (Space, or the Jump button on a phone).")]
@@ -561,7 +561,8 @@ namespace GlassRoom
         bool WithinReach(Collider target)
         {
             Vector3 feet = transform.position;
-            Vector3 nearestPoint = target.ClosestPoint(feet);
+            // (Solid shapes like the chairs can't answer this exactly; their box is close enough.)
+            Vector3 nearestPoint = target is MeshCollider mesh && !mesh.convex ? target.bounds.ClosestPoint(feet) : target.ClosestPoint(feet);
             Vector2 apart = new Vector2(nearestPoint.x - feet.x, nearestPoint.z - feet.z);
             return apart.magnitude <= interactRange;
         }
@@ -860,14 +861,20 @@ namespace GlassRoom
                 else if (target is Seat) m_Hud.SetKeyHints((Click, "to sit"));
                 else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
-                else if (m_JumpHintShown < JumpHintSeconds + JumpHintFade)
-                    m_Hud.SetKeyHints(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade), ("Space", "to jump"), ("W W", "to sprint"));
                 else m_Hud.SetKeyHints();
+                // The first few seconds: how to jump and sprint, on two lines at the bottom.
+                bool tutorial = !menu && HintSettings.Enabled && m_JumpHintShown < JumpHintSeconds + JumpHintFade
+                                && target == null && m_Seat == null && m_Ride == null;
+                if (tutorial)
+                    m_Hud.SetTutorial(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade),
+                        ("Space", "to jump"), ("W", "double tap to sprint"));
+                else m_Hud.SetTutorial(0f);
                 return;
             }
 
             m_Hud.SetCrosshair(false, false);
             m_Hud.SetKeyHints();
+            m_Hud.SetTutorial(0f);
             // You can't jump on the scooter or from a chair, so the Jump button goes away then;
             // and seated, there's no walking either, so the joystick goes too.
             m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null);

@@ -49,7 +49,7 @@ namespace GlassRoom
                 if (p == null || p.IsLocal || p.Object == null || !p.Object.IsValid) continue;
                 if (!m_Tags.TryGetValue(p, out var tag)) m_Tags[p] = tag = NewTag();
                 var avatar = p.Avatar;
-                bool visible = show && avatar != null && Place(tag, avatar, cam);
+                bool visible = show && avatar != null && p.PlayerName.Length > 0 && Place(tag, avatar, cam);
                 if (visible) tag.text = p.PlayerName.ToString();
                 if (tag.gameObject.activeSelf != visible) tag.gameObject.SetActive(visible);
             }

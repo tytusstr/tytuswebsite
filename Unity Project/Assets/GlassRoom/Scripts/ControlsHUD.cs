@@ -75,7 +75,8 @@ namespace GlassRoom
         RectTransform m_Card, m_Lower;
         Text m_FovValue;
         Slider m_FovSlider;
-        const float CardHeight = 930f, MouseRowHeight = 80f;
+        const float CardHeight = 1090f, MouseRowHeight = 80f;
+        Text m_CharacterValue, m_NameValue;
         CanvasGroup m_HintGroup;
         // Phone buttons in the bottom-right corner, and computer key hints along the bottom.
         readonly GameObject[] m_ContextButtons = new GameObject[2];
@@ -124,7 +125,13 @@ namespace GlassRoom
             m_FakeCursor.Tick(IsMenuOpen && Cursor.lockState == CursorLockMode.Locked
                 && InputModeManager.Mode == ControlMode.KeyboardMouse);
             if (IsMenuOpen)
+            {
                 m_FrameRate.text = Mathf.RoundToInt(1f / m_SmoothedFrameTime) + " fps";
+                string name = WebPage.PlayerName;
+                m_NameValue.text = string.IsNullOrEmpty(name) ? "Add a name" : name;
+                ShowCharacter();
+                FitCard();
+            }
             FitSafeArea();
         }
 
@@ -150,6 +157,15 @@ namespace GlassRoom
             m_SafeArea.offsetMin = m_SafeArea.offsetMax = Vector2.zero;
         }
 
+        // The settings card shrinks to fit short screens (it's tall in computer mode).
+        void FitCard()
+        {
+            float available = ((RectTransform)transform).rect.height - 40f;
+            float height = m_Card.sizeDelta.y;
+            float scale = height > 0f ? Mathf.Min(1f, available / height) : 1f;
+            if (!Mathf.Approximately(m_Card.localScale.x, scale)) m_Card.localScale = Vector3.one * scale;
+        }
+
         static Vector2 Clamp01(Vector2 v) => new Vector2(Mathf.Clamp01(v.x), Mathf.Clamp01(v.y));
 
         /// <summary>
@@ -165,6 +181,55 @@ namespace GlassRoom
                 m_ContextLabels[i].text = buttons[i].label;
                 m_ContextActions[i] = buttons[i].action;
             }
+        }
+
+        // The first-moments tutorial: one "[key] what it does" line per bar, stacked at the bottom.
+        readonly List<(GameObject bar, Text key, Text label, CanvasGroup group)> m_TutorialLines = new List<(GameObject, Text, Text, CanvasGroup)>();
+
+        /// <summary>Computer: tutorial lines one under the other at the bottom (none hides them), faded by opacity.</summary>
+        public void SetTutorial(float opacity, params (string key, string label)[] lines)
+        {
+            while (m_TutorialLines.Count < lines.Length) m_TutorialLines.Add(BuildTutorialLine());
+            for (int i = 0; i < m_TutorialLines.Count; i++)
+            {
+                var line = m_TutorialLines[i];
+                bool show = i < lines.Length;
+                if (line.bar.activeSelf != show) line.bar.SetActive(show);
+                if (!show) continue;
+                line.key.text = lines[i].key;
+                line.label.text = lines[i].label;
+                line.group.alpha = opacity;
+                // First line on top.
+                ((RectTransform)line.bar.transform).anchoredPosition = new Vector2(0f, 30f + (lines.Length - 1 - i) * 62f);
+            }
+        }
+
+        (GameObject, Text, Text, CanvasGroup) BuildTutorialLine()
+        {
+            var bar = NewRect("Tutorial Line", m_SafeArea, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
+            bar.pivot = new Vector2(0.5f, 0f);
+            AddImage(bar.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.22f), UISprites.RoundedPanel, false, 26f);
+            var layout = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(10, 22, 8, 8);
+            layout.spacing = 10f;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+            var fit = bar.gameObject.AddComponent<ContentSizeFitter>();
+            fit.horizontalFit = fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            var cap = NewRect("Key", bar, Vector2.zero, Vector2.zero);
+            AddImage(cap.gameObject, new Color(1f, 1f, 1f, 0.16f), UISprites.RoundedPanel, false, 8f);
+            var capLayout = cap.gameObject.AddComponent<HorizontalLayoutGroup>();
+            capLayout.padding = new RectOffset(10, 10, 5, 5);
+            capLayout.childControlWidth = capLayout.childControlHeight = true;
+            var key = NewRect("Text", cap, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
+            StyleText(key, 22, Color.white, FontStyle.Bold);
+            var label = NewRect("Label", bar, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
+            StyleText(label, 24, Color.white, FontStyle.Normal);
+            var group = bar.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            bar.gameObject.SetActive(false);
+            return (bar.gameObject, key, label, group);
         }
 
         /// <summary>Computer key hints along the bottom, like "[E] to get off"; pass none to hide.</summary>
@@ -469,6 +534,31 @@ namespace GlassRoom
             AddSwitch(lower, -724f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on, -135f, 230f);
             AddSwitch(lower, -724f, "Names", () => NameSettings.Enabled, on => NameSettings.Enabled = on, 135f, 230f);
 
+            // Which person you are (remembered), and your name (opens the name box).
+            var character = NewRect("Character Row", lower, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            character.sizeDelta = new Vector2(500f, 60f);
+            character.anchoredPosition = new Vector2(0f, -804f);
+            AddText(character, "Character", 26, k_Ink, FontStyle.Bold).alignment = TextAnchor.MiddleLeft;
+            m_CharacterValue = AddText(character, "", 24, k_Ink, FontStyle.Bold);
+            m_CharacterValue.alignment = TextAnchor.MiddleRight;
+            m_CharacterValue.rectTransform.offsetMax = new Vector2(-78f, 0f);
+            SmallButton(character, "<", new Vector2(-196f, 0f), () => ChangeCharacter(-1));
+            SmallButton(character, ">", new Vector2(-28f, 0f), () => ChangeCharacter(1));
+
+            var nameRow = NewRect("Name Row", lower, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            nameRow.sizeDelta = new Vector2(500f, 60f);
+            nameRow.anchoredPosition = new Vector2(0f, -884f);
+            AddText(nameRow, "Name", 26, k_Ink, FontStyle.Bold).alignment = TextAnchor.MiddleLeft;
+            var nameButton = NewRect("Name Button", nameRow, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f));
+            nameButton.sizeDelta = new Vector2(260f, 56f);
+            nameButton.anchoredPosition = new Vector2(-130f, 0f);
+            var nameBg = AddImage(nameButton.gameObject, k_Idle, UISprites.RoundedPanel, true, 14f);
+            var nb = nameButton.gameObject.AddComponent<Button>();
+            nb.targetGraphic = nameBg;
+            nb.onClick.AddListener(WebPage.EditName);
+            m_NameValue = AddText(nameButton, "", 24, k_Ink, FontStyle.Bold);
+            ShowCharacter();
+
             var done = NewRect("Done", card, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
             done.sizeDelta = new Vector2(500f, 84f);
             done.anchoredPosition = new Vector2(0f, 72f);
@@ -479,6 +569,33 @@ namespace GlassRoom
             AddText(done, "Done", 30, Color.white, FontStyle.Bold);
 
             return menu.gameObject;
+        }
+
+        void SmallButton(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction action)
+        {
+            var rect = NewRect(label + " Button", parent, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f));
+            rect.sizeDelta = new Vector2(56f, 56f);
+            rect.anchoredPosition = position;
+            var bg = AddImage(rect.gameObject, k_Idle, UISprites.Circle, true);
+            var b = rect.gameObject.AddComponent<Button>();
+            b.targetGraphic = bg;
+            b.onClick.AddListener(action);
+            AddText(rect, label, 34, k_Ink, FontStyle.Bold);
+        }
+
+        void ChangeCharacter(int step)
+        {
+            var body = LocalPlayerBody.Instance;
+            if (body == null) return;
+            body.SetAvatar(body.AvatarIndex + step);
+            ShowCharacter();
+        }
+
+        void ShowCharacter()
+        {
+            var body = LocalPlayerBody.Instance;
+            int count = LocalPlayerBody.Choices;
+            if (m_CharacterValue != null) m_CharacterValue.text = body != null && count > 0 ? (body.AvatarIndex + 1) + " / " + count : "";
         }
 
         // Full: sharp, every effect. Low: lower resolution and cheaper effects, for lag.

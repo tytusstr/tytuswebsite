@@ -11,9 +11,9 @@ namespace GlassRoom
     {
         [Header("Driving")]
         [Tooltip("Top speed in metres per second; a little faster than walking.")]
-        public float maxSpeed = 6.5f;
+        public float maxSpeed = 7.8f;
         public float reverseSpeed = 1.6f;
-        public float acceleration = 3.6f;
+        public float acceleration = 4.3f;
         public float brakeDeceleration = 7f;
         public float coastDeceleration = 2.5f;
         [Tooltip("Degrees per second at full steering. It can turn on the spot.")]
@@ -220,7 +220,7 @@ namespace GlassRoom
             var grip = side < 0 ? m_LeftGrip : m_RightGrip;
             Vector3 p = grip != null ? grip.position : transform.TransformPoint(new Vector3(0.193f * side, 1.031f, 0.122f));
             // The wrist sits behind the bar and a little above it, with the palm on top of it.
-            return p - transform.forward * 0.07f + Vector3.up * 0.03f;
+            return p - transform.forward * 0.06f + Vector3.up * 0.055f;
         }
 
         /// <summary>This player has the scooter again (they've stepped on it).</summary>

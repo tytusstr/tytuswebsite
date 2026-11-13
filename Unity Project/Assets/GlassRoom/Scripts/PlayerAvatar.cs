@@ -18,12 +18,12 @@ namespace GlassRoom
 
         // The sitting animation has the hips this high above the feet; the seat cushion is a
         // little below the hip bone.
-        const float SitHipHeight = 0.59f, HipAboveCushion = 0.1f;
+        const float SitHipHeight = 0.59f;
         // How far the head can turn from the body, and look up or down, in degrees.
         const float HeadTurnLimit = 100f, HeadTiltLimit = 70f;
 
         Animator m_Animator;
-        Transform m_Spine, m_Neck, m_Head;
+        Transform m_Spine, m_Neck, m_Head, m_LClavicle, m_RClavicle;
         Transform m_LUpper, m_LFore, m_LHand, m_RUpper, m_RFore, m_RHand;
         // Finger bones, per hand: [finger 0-4][segment 0-2]; finger 0 is the thumb.
         readonly Transform[,] m_LFingers = new Transform[5, 3], m_RFingers = new Transform[5, 3];
@@ -45,6 +45,8 @@ namespace GlassRoom
                     case "Bip01 Spine2": m_Spine = t; break;
                     case "Bip01 Neck": m_Neck = t; break;
                     case "Bip01 Head": m_Head = t; break;
+                    case "Bip01 L Clavicle": m_LClavicle = t; break;
+                    case "Bip01 R Clavicle": m_RClavicle = t; break;
                     case "Bip01 L UpperArm": m_LUpper = t; break;
                     case "Bip01 L Forearm": m_LFore = t; break;
                     case "Bip01 L Hand": m_LHand = t; break;
@@ -65,10 +67,19 @@ namespace GlassRoom
             }
         }
 
-        /// <summary>Where the player is and what they're doing.</summary>
-        public void Pose(Vector3 feet, float yaw, float speed, bool seated, float dt)
+        /// <summary>
+        /// Where the player is and what they're doing. Leaning back (degrees, in a chair) tips the
+        /// whole body back around the hips.
+        /// </summary>
+        public void Pose(Vector3 feet, float yaw, float speed, bool seated, float dt, float leanBack = 0f)
         {
-            transform.SetPositionAndRotation(feet, Quaternion.Euler(0f, yaw, 0f));
+            if (Mathf.Abs(leanBack) > 0.01f)
+            {
+                var rotation = Quaternion.Euler(-leanBack, yaw, 0f);
+                Vector3 hips = feet + Vector3.up * SitHipHeight;
+                transform.SetPositionAndRotation(hips - rotation * Vector3.up * SitHipHeight, rotation);
+            }
+            else transform.SetPositionAndRotation(feet, Quaternion.Euler(0f, yaw, 0f));
             if (m_Animator == null) return;
             m_Animator.SetFloat(k_Speed, speed, 0.12f, Mathf.Max(dt, 0.0001f));
             m_Animator.SetBool(k_Seated, seated);
@@ -96,13 +107,19 @@ namespace GlassRoom
         }
 
         // The turn is shared out: a little in the upper back, more in the neck, most in the head.
+        // Looking up and down bends only the neck and head. The shoulders hang from the neck in
+        // these skeletons, so they're held where they were: the arms never move with the head.
         void TurnHead()
         {
             Vector3 right = transform.right;
             float yawSoFar = 0f;
-            Bend(m_Spine, 0.25f, 0.15f, ref yawSoFar, right);
-            Bend(m_Neck, 0.35f, 0.35f, ref yawSoFar, right);
-            Bend(m_Head, 0.40f, 0.50f, ref yawSoFar, right);
+            Bend(m_Spine, 0.25f, 0f, ref yawSoFar, right);
+            Quaternion left = m_LClavicle != null ? m_LClavicle.rotation : Quaternion.identity;
+            Quaternion rightShoulder = m_RClavicle != null ? m_RClavicle.rotation : Quaternion.identity;
+            Bend(m_Neck, 0.35f, 0.4f, ref yawSoFar, right);
+            Bend(m_Head, 0.40f, 0.6f, ref yawSoFar, right);
+            if (m_LClavicle != null) m_LClavicle.rotation = left;
+            if (m_RClavicle != null) m_RClavicle.rotation = rightShoulder;
         }
 
         void Bend(Transform bone, float yawShare, float pitchShare, ref float yawSoFar, Vector3 bodyRight)
@@ -171,6 +188,9 @@ namespace GlassRoom
             fore.rotation = Quaternion.FromToRotation(hand.position - fore.position, a + dir * reach - fore.position) * fore.rotation;
         }
 
+        /// <summary>How far someone in this chair leans back (for Pose).</summary>
+        public static float LeanBack(Seat seat) => seat != null ? seat.recline : 0f;
+
         public void SetLayer(int layer)
         {
             foreach (var t in GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
@@ -183,8 +203,8 @@ namespace GlassRoom
             bodyYaw = yaw;
             if (seat != null)
             {
-                // Hips over the middle of the seat, sitting on the cushion, facing out of the chair.
-                feet = seat.SitPoint + Vector3.up * (seat.seatHeight + HipAboveCushion - SitHipHeight);
+                // Hips in the seat on the cushion, facing out of the chair (Pose leans them back).
+                feet = seat.HipPoint - Vector3.up * SitHipHeight;
                 bodyYaw = Quaternion.LookRotation(seat.Facing).eulerAngles.y;
             }
             else if (ride != null)

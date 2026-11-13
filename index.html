@@ -53,9 +53,23 @@
     #name { opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity 0.6s ease, transform 0.6s ease, border-color 0.25s ease;
       width: 179px; box-sizing: border-box; padding: 14px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.35);
       background: transparent; color: rgba(255,255,255,0.92); text-align: center; outline: none;
-      font: 500 14px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.04em;
+      /* The same lettering as ENTER: small spaced capitals. */
+      font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.4em; text-transform: uppercase;
       -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; caret-color: #fff; }
-    #name::placeholder { color: rgba(255,255,255,0.38); }
+    #name::placeholder, #editInput::placeholder { color: rgba(255,255,255,0.38); }
+    #name.hidden { display: none; }
+    /* Changing your name later (Settings > Name): the same box and button over the game. */
+    #nameEdit { position: fixed; inset: 0; display: none; place-items: center; background: rgba(0,0,0,0.72); z-index: 10; }
+    #nameEdit.open { display: grid; }
+    #nameEdit .col { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    #editInput { width: 179px; box-sizing: border-box; padding: 14px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.5);
+      background: transparent; color: rgba(255,255,255,0.92); text-align: center; outline: none; caret-color: #fff;
+      font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.4em; text-transform: uppercase;
+      -webkit-user-select: text; user-select: text; }
+    #editSave { font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.85em; text-indent: 0.85em;
+      text-transform: uppercase; color: rgba(255,255,255,0.9); background: transparent; border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 10px; padding: 16px 0; width: 179px; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+    #editSave:hover, #editSave:focus-visible { color: #000; background: #fff; border-color: #fff; }
     #name:focus { border-color: rgba(255,255,255,0.75); }
     #name:focus::placeholder { color: transparent; }
     /* Pressed: waits (gently pulsing) while the game joins the room. */
@@ -66,6 +80,7 @@
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
   <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button></div></div>
+  <div id="nameEdit"><div class="col"><input id="editInput" type="text" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
     // Browsers refuse to capture the mouse pointer until the player has clicked. The game asks
     // again on the first click, so a refusal is harmless; catch it here so Safari doesn't show
@@ -109,9 +124,12 @@
     // Your name: shown faintly in the box (the last one you used, or "Your name"); clicking the
     // box clears it so you can type a new one.
     var nameBox = document.getElementById("name");
+    // Once you've entered with a name it's remembered, and the box isn't shown again (change it
+    // in Settings > Name). Entering with the box empty plays without a name, and the box comes
+    // back next time.
     var savedName = "";
     try { savedName = localStorage.getItem("glassRoomName") || ""; } catch (e) {}
-    if (savedName) nameBox.placeholder = savedName;
+    if (savedName) nameBox.classList.add("hidden");
     var ready = false, entered = false;
     window.gameCovered = true; // read by the game (see WebPage.jslib)
     // Until Enter is pressed nothing reaches the game: no keys, clicks, touches or wheel. These
@@ -239,8 +257,8 @@
       if (!ready || entered) return;
       entered = true;
       var typed = nameBox.value.replace(/\s+/g, " ").trim().slice(0, 16);
-      window.playerName = typed || savedName || "Player";
-      try { localStorage.setItem("glassRoomName", window.playerName); } catch (e) {}
+      window.playerName = typed || savedName || "";
+      if (typed) { try { localStorage.setItem("glassRoomName", typed); } catch (e) {} }
       nameBox.blur();
       nameBox.disabled = true;
       enter.classList.add("joining");
@@ -248,6 +266,36 @@
       window.gameEntered = true;
       setTimeout(window.revealGame, 15000);
     }
+    // Settings > Name: the box over the game. Typing there never reaches the game.
+    var nameEdit = document.getElementById("nameEdit"), editInput = document.getElementById("editInput");
+    window.editName = function () {
+      if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
+      editInput.value = window.playerName || "";
+      nameEdit.classList.add("open");
+      setTimeout(function () { editInput.focus(); editInput.select(); }, 30);
+    };
+    function closeNameEdit(save) {
+      if (save) {
+        var typed = editInput.value.replace(/\s+/g, " ").trim().slice(0, 16);
+        window.playerName = typed;
+        try { if (typed) localStorage.setItem("glassRoomName", typed); else localStorage.removeItem("glassRoomName"); } catch (e) {}
+      }
+      editInput.blur();
+      nameEdit.classList.remove("open");
+      canvas.focus({ preventScroll: true });
+    }
+    document.getElementById("editSave").addEventListener("click", function () { closeNameEdit(true); });
+    ["keydown", "keyup", "keypress", "mousedown", "mouseup", "mousemove", "click", "dblclick", "contextmenu",
+     "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "pointerdown", "pointerup", "pointermove"].forEach(function (type) {
+      window.addEventListener(type, function (e) {
+        if (!nameEdit.classList.contains("open")) return;
+        if (e.target === nameEdit && (type === "mousedown" || type === "touchstart")) { e.stopImmediatePropagation(); closeNameEdit(false); return; }
+        if (!(e.target && e.target.closest && e.target.closest("#nameEdit"))) return;
+        e.stopImmediatePropagation();
+        if (type === "keydown" && e.key === "Enter") { e.preventDefault(); closeNameEdit(true); }
+        if (type === "keydown" && e.key === "Escape") { e.preventDefault(); closeNameEdit(false); }
+      }, { capture: true, passive: false });
+    });
     window.revealGame = function () {
       if (!window.gameCovered) return;
       window.gameCovered = false;

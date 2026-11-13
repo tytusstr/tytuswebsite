@@ -17,18 +17,24 @@ namespace GlassRoom.Editor
     {
         const string Root = "Assets/GlassRoom/Models/Players";
         const string PrefabDir = "Assets/GlassRoom/Prefabs/Players";
-        static readonly string[] k_People = { "Male_Adult_01", "Male_Adult_08", "Male_Adult_12", "Male_Adult_17" };
+        static readonly string[] k_People =
+        {
+            "Male_Adult_01", "Female_Adult_08", "Male_Adult_08", "Female_Adult_17", "Male_Adult_12",
+            "Female_Adult_04", "Male_Adult_17", "Female_Adult_12", "Male_Adult_04", "Male_Adult_16",
+        };
 
         [MenuItem("Tools/Glass Room/Set Up Player Characters")]
         public static void SetUp()
         {
             EnsureLayer(LocalPlayerBody.LayerName);
-            var controller = BuildController();
+            // Men move with the men's recordings, women with the women's.
+            var male = BuildController("m", "Male_Adult_01", "Player");
+            var female = BuildController("f", "Female_Adult_04", "Player Female");
             Directory.CreateDirectory(PrefabDir);
             var prefabs = new List<PlayerAvatar>();
             foreach (string person in k_People)
             {
-                var prefab = BuildPrefab(person, controller);
+                var prefab = BuildPrefab(person, person.StartsWith("Female") ? female : male);
                 if (prefab != null) prefabs.Add(prefab);
             }
             Directory.CreateDirectory("Assets/GlassRoom/Resources");
@@ -87,17 +93,17 @@ namespace GlassRoom.Editor
         }
 
         // Standing, walking and running blend by speed (m/s); sitting is its own state.
-        static AnimatorController BuildController()
+        static AnimatorController BuildController(string prefix, string sourcePerson, string name)
         {
             string animDir = Root + "/Animations/";
-            var source = ConfigureModel(Root + "/" + k_People[0] + "/" + k_People[0] + ".fbx");
-            var idle = Clip(animDir + "m_idle_neutral_01.fbx", source, true);
-            var walk = Clip(animDir + "m_walk_neutral_01.fbx", source, true);
-            var run = Clip(animDir + "m_run_neutral_01.fbx", source, true);
-            var sprint = Clip(animDir + "m_run_fast_01.fbx", source, true);
-            var sit = Clip(animDir + "m_sit_chair_idle_neutral_01.fbx", source, true);
+            var source = ConfigureModel(Root + "/" + sourcePerson + "/" + sourcePerson + ".fbx");
+            var idle = Clip(animDir + prefix + "_idle_neutral_01.fbx", source, true);
+            var walk = Clip(animDir + prefix + "_walk_neutral_01.fbx", source, true);
+            var run = Clip(animDir + prefix + "_run_neutral_01.fbx", source, true);
+            var sprint = Clip(animDir + prefix + "_run_fast_01.fbx", source, true);
+            var sit = Clip(animDir + prefix + "_sit_chair_idle_neutral_01.fbx", source, true);
 
-            const string path = "Assets/GlassRoom/Models/Players/Player.controller";
+            string path = "Assets/GlassRoom/Models/Players/" + name + ".controller";
             AssetDatabase.DeleteAsset(path);
             var controller = AnimatorController.CreateAnimatorControllerAtPath(path);
             controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
@@ -110,15 +116,15 @@ namespace GlassRoom.Editor
             tree.useAutomaticThresholds = false;
             // Each clip at the speed (m/s) it was recorded moving, played a little faster or
             // slower to match the game's speeds so the feet don't slide: walk 1.0, jog 2.9 and
-            // sprint 5.8 m/s in the recordings; the game walks at 2.1 and sprints at 5.65.
+            // sprint 5.8 m/s in the recordings; the game walks at 2.1 and sprints at 4.5.
             tree.AddChild(idle, 0f);
             tree.AddChild(walk, 1.3f);
             tree.AddChild(run, 2.9f);
-            tree.AddChild(sprint, 5.65f);
+            tree.AddChild(sprint, 4.5f);
             var children = tree.children;
             children[1].timeScale = 1.3f / 1.01f;
             children[2].timeScale = 1f;
-            children[3].timeScale = 5.65f / 5.84f;
+            children[3].timeScale = 0.85f;
             tree.children = children;
             sm.defaultState = move;
 
