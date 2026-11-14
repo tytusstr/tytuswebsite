@@ -145,7 +145,7 @@ namespace GlassRoom
             m_Layer = LayerMask.NameToLayer("Board");
             if (m_Layer < 0) m_Layer = 30;
             // With smaller copies for seeing it from far away, so it doesn't shimmer.
-            m_Texture = new RenderTexture(1024, 512, 16, RenderTextureFormat.ARGB32)
+            m_Texture = new RenderTexture(2048, 1024, 16, RenderTextureFormat.ARGB32)
             {
                 name = "Marker Board", antiAliasing = 2, useMipMap = true, autoGenerateMips = true,
                 filterMode = FilterMode.Trilinear, anisoLevel = 4,
@@ -197,7 +197,7 @@ namespace GlassRoom
                 cloud.anchoredPosition = new Vector2(14f, -12f);
                 var cloudImage = cloud.gameObject.AddComponent<RawImage>();
                 cloudImage.texture = cloudTex;
-                cloudImage.color = new Color(0.1f, 0.1f, 0.12f, 0.55f);
+                cloudImage.color = new Color(0.1f, 0.1f, 0.12f, 0.7f);
                 cloudImage.raycastTarget = false;
             }
             m_Content = NewRect("Content", rect);
