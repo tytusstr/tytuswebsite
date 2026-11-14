@@ -19,6 +19,7 @@ namespace GlassRoom
         [DllImport("__Internal")] static extern void WebPage_SetPlayerName(string name);
         [DllImport("__Internal")] static extern int WebPage_IsMobile();
         [DllImport("__Internal")] static extern void WebPage_ShowGone(string message);
+        [DllImport("__Internal")] static extern void WebPage_Reload(string message);
         /// <summary>True when running in a web page (where the page captures the pointer).</summary>
         public const bool InBrowser = true;
 #else
@@ -34,6 +35,7 @@ namespace GlassRoom
         static void WebPage_SetPlayerName(string name) => s_EditorName = name;
         static int WebPage_IsMobile() => 0;
         static void WebPage_ShowGone(string message) => UnityEngine.Debug.Log("Gone: " + message);
+        static void WebPage_Reload(string message) => UnityEngine.Debug.Log("Reload: " + message);
         public const bool InBrowser = false;
 #endif
 
@@ -67,6 +69,9 @@ namespace GlassRoom
 
         /// <summary>Stops play for this player with a message and a Reload button.</summary>
         public static void ShowGone(string message) => WebPage_ShowGone(message);
+
+        /// <summary>Reloads the page to rejoin (or, if that just happened, shows the message with a Reload button).</summary>
+        public static void Reload(string message) => WebPage_Reload(message);
 
         /// <summary>The name typed on the Enter screen ("" if none).</summary>
         public static string PlayerName

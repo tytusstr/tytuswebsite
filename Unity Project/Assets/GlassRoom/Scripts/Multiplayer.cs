@@ -17,7 +17,7 @@ namespace GlassRoom
         public string sessionName = "glass-room";
         public int maxPlayers = 100;
         /// <summary>Bump whenever NetworkPlayer's shared data changes.</summary>
-        public const int NetworkVersion = 5;
+        public const int NetworkVersion = 6;
 
         public static Multiplayer Instance { get; private set; }
         /// <summary>Everyone in the room, you included.</summary>
@@ -89,7 +89,11 @@ namespace GlassRoom
             if (m_Ready && Time.unscaledTime - m_LastInput > IdleLimit)
                 Leave("You were away for 10 minutes, so you've left the room.");
             else if (m_JoinedAt >= 0f && m_Runner != null && !m_Runner.IsRunning && !m_Connecting)
-                Leave("You've been disconnected.");
+            {
+                // Dropped out of the room (often after the page was out of sight): reload to rejoin.
+                m_Gone = true;
+                WebPage.Reload("You've been disconnected. Reload to play again.");
+            }
         }
 
         bool m_Connecting;
@@ -152,17 +156,16 @@ namespace GlassRoom
             catch (System.Exception e)
             {
                 Debug.LogWarning("Multiplayer: couldn't connect: " + e.Message);
-                m_Connecting = false;
-                MarkReady();
+                ConnectFailed(go);
                 return;
             }
-            m_Connecting = false;
             if (!result.Ok)
             {
                 Debug.LogWarning("Multiplayer: couldn't join: " + result.ShutdownReason);
-                MarkReady();
+                ConnectFailed(go);
                 return;
             }
+            m_Connecting = false;
             var me = FindAnyObjectByType<FirstPersonController>();
             // Everyone starts at their own spot around the entrance, facing into the hall, so
             // nobody appears inside anyone else. (Only the first time: after a reconnect you
@@ -178,7 +181,38 @@ namespace GlassRoom
             }
             Vector3 at = me != null ? me.transform.position : Vector3.zero;
             m_Runner.Spawn(playerPrefab, at, Quaternion.identity, m_Runner.LocalPlayer);
-            if (m_JoinedAt < 0f) m_JoinedAt = Time.unscaledTime;
+            if (m_JoinedAt < 0f)
+            {
+                m_JoinedAt = Time.unscaledTime;
+                // Who came in, and when (kept online; see JoinLog).
+                StartCoroutine(JoinLog.Record(WebPage.PlayerName));
+            }
+        }
+
+        // Couldn't get into the room: try again a few times, then reload the page, rather than
+        // playing on alone.
+        int m_Attempts;
+
+        void ConnectFailed(GameObject runner)
+        {
+            if (runner != null) Destroy(runner);
+            m_Runner = null;
+            if (++m_Attempts >= 3)
+            {
+                m_Connecting = false;
+                m_Gone = true;
+                MarkReady();
+                WebPage.Reload("Couldn't connect to the room. Reload to try again.");
+                return;
+            }
+            StartCoroutine(RetryConnect());
+        }
+
+        System.Collections.IEnumerator RetryConnect()
+        {
+            // (Timers on other threads don't run in a web page; a coroutine does.)
+            yield return new WaitForSecondsRealtime(1.5f);
+            Connect();
         }
 
         /// <summary>For testing: logs where everyone is (unityGame.SendMessage("Multiplayer", "Dump")).</summary>
@@ -226,6 +260,14 @@ namespace GlassRoom
             else if (a[0] == "radio" && radio != null) radio.TogglePlayPause();
             else if (a[0] == "skip" && radio != null) radio.Skip();
             else if (a[0] == "tp" && me != null) me.Teleport(new Vector3(float.Parse(a[1], inv), 0.05f, float.Parse(a[2], inv)), float.Parse(a[3], inv));
+            else if (a[0] == "kick" && me != null && VictimBody.Instance != null)
+            {
+                // Hits the body from where you stand, as a scooter going this fast would.
+                var body = VictimBody.Instance.transform.GetComponentInChildren<Rigidbody>();
+                Vector3 dir = body.worldCenterOfMass - me.transform.position;
+                dir.y = 0f;
+                VictimBody.Instance.Hit(body.worldCenterOfMass - dir.normalized * 0.15f, dir, float.Parse(a[1], inv));
+            }
             else if (a[0] == "hit" && me != null) me.TakeHit(Quaternion.Euler(0f, float.Parse(a[1], inv), 0f) * Vector3.forward, float.Parse(a[2], inv));
             else if (me != null) me.TestAct(a[0]);
             Dump();

@@ -166,7 +166,9 @@ namespace GlassRoom.Editor
             // Knocked over by a scooter: fall (backwards or onto the front), lie there, get up.
             if (fallBack != null && fallFront != null && upBack != null && upFront != null)
             {
-                Knockdown(sm, move, "Back", fallBack, 0.3f, upBack, 0f, 0.92f, 0.75f, true);
+                // Back: the recording staggers first, so it starts where the fall begins; getting up
+                // is left before the arms swing back at the end.
+                Knockdown(sm, move, "Back", fallBack, 0.36f, upBack, 0f, 1f, 0.55f, true);
                 Knockdown(sm, move, "Front", fallFront, 0.05f, upFront, 0.42f, 2.3f, 0.86f, false);
             }
             EditorUtility.SetDirty(controller);
@@ -192,12 +194,12 @@ namespace GlassRoom.Editor
             var up = falling.AddTransition(rising);
             up.AddCondition(AnimatorConditionMode.IfNot, 0f, "Down");
             up.hasExitTime = false;
-            up.duration = 0.25f;
+            up.duration = 0.4f;
             // Back to standing before the end of the recording (it ends in a fighter's stance).
             var done = rising.AddTransition(move);
             done.hasExitTime = true;
             done.exitTime = upEnd;
-            done.duration = 0.4f;
+            done.duration = 0.45f;
         }
 
         static AnimationClip Mixamo(string name, bool loop)

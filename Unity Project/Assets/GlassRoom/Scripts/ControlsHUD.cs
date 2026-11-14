@@ -144,9 +144,11 @@ namespace GlassRoom
                 ShowCharacter();
                 FitCard();
                 if (m_TurnHint.activeSelf != HintSettings.Enabled) m_TurnHint.SetActive(HintSettings.Enabled);
+                bool qNote = HintSettings.Enabled && InputModeManager.Mode == ControlMode.KeyboardMouse;
+                if (m_QNote.activeSelf != qNote) m_QNote.SetActive(qNote);
             }
             FitSafeArea();
-            // How many people are here, snug in the top-right corner.
+            // How many people are here, snug in the bottom-left corner.
             int online = Multiplayer.PlayerCount;
             m_Online.text = online > 0 ? online + " online" : "";
         }
@@ -198,21 +200,32 @@ namespace GlassRoom
             }
         }
 
-        // The first-moments tutorial: "[key] what it does" lines one under the other, their left
-        // edges lined up, the block centred at the bottom of the screen.
-        readonly List<(GameObject bar, Text key, Text label, CanvasGroup group)> m_TutorialLines = new List<(GameObject, Text, Text, CanvasGroup)>();
+        // The first-moments tutorial: a little picture and "KEY what it does" on each line, one
+        // under the other, their left edges lined up, the block centred at the bottom. No boxes:
+        // white text with a soft dark edge so it reads on the white room.
+        readonly List<(GameObject line, Image icon, Text label, CanvasGroup group)> m_TutorialLines = new List<(GameObject, Image, Text, CanvasGroup)>();
         RectTransform m_TutorialBlock;
+        static readonly Dictionary<string, Sprite> s_Icons = new Dictionary<string, Sprite>();
 
-        /// <summary>Computer: tutorial lines one under the other at the bottom (none hides them), faded by opacity.</summary>
-        public void SetTutorial(float opacity, params (string key, string label)[] lines)
+        static Sprite Icon(string name)
+        {
+            if (s_Icons.TryGetValue(name, out var sprite)) return sprite;
+            var tex = Resources.Load<Texture2D>("Icons/" + name);
+            sprite = tex != null ? Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f)) : null;
+            s_Icons[name] = sprite;
+            return sprite;
+        }
+
+        /// <summary>Computer: tutorial lines (icon name in Resources/Icons, rich text) at the bottom; none hides them.</summary>
+        public void SetTutorial(float opacity, params (string icon, string text)[] lines)
         {
             if (m_TutorialBlock == null)
             {
                 m_TutorialBlock = NewRect("Tutorial", m_SafeArea, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
                 m_TutorialBlock.pivot = new Vector2(0.5f, 0f);
-                m_TutorialBlock.anchoredPosition = new Vector2(0f, 30f);
+                m_TutorialBlock.anchoredPosition = new Vector2(0f, 34f);
                 var layout = m_TutorialBlock.gameObject.AddComponent<VerticalLayoutGroup>();
-                layout.spacing = 10f;
+                layout.spacing = 6f;
                 layout.childAlignment = TextAnchor.LowerLeft;
                 layout.childControlWidth = layout.childControlHeight = true;
                 layout.childForceExpandWidth = layout.childForceExpandHeight = false;
@@ -223,42 +236,40 @@ namespace GlassRoom
             for (int i = 0; i < m_TutorialLines.Count; i++)
             {
                 var line = m_TutorialLines[i];
-                bool show = i < lines.Length;
-                if (line.bar.activeSelf != show) line.bar.SetActive(show);
+                bool show = i < lines.Length && opacity > 0.001f;
+                if (line.line.activeSelf != show) line.line.SetActive(show);
                 if (!show) continue;
-                line.key.text = lines[i].key;
-                line.label.text = lines[i].label;
+                line.icon.sprite = Icon(lines[i].icon);
+                line.label.text = lines[i].text;
                 line.group.alpha = opacity;
             }
         }
 
-        (GameObject, Text, Text, CanvasGroup) BuildTutorialLine()
+        (GameObject, Image, Text, CanvasGroup) BuildTutorialLine()
         {
-            var bar = NewRect("Tutorial Line", m_TutorialBlock, Vector2.zero, Vector2.zero);
-            AddImage(bar.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.22f), UISprites.RoundedPanel, false, 26f);
-            var layout = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(10, 22, 8, 8);
+            var row = NewRect("Tutorial Line", m_TutorialBlock, Vector2.zero, Vector2.zero);
+            var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
             layout.spacing = 12f;
             layout.childAlignment = TextAnchor.MiddleLeft;
             layout.childControlWidth = layout.childControlHeight = true;
             layout.childForceExpandWidth = layout.childForceExpandHeight = false;
-            var cap = NewRect("Key", bar, Vector2.zero, Vector2.zero);
-            AddImage(cap.gameObject, new Color(1f, 1f, 1f, 0.16f), UISprites.RoundedPanel, false, 8f);
-            // Every key the same width, so the words after them line up too.
-            cap.gameObject.AddComponent<LayoutElement>().minWidth = 96f;
-            var capLayout = cap.gameObject.AddComponent<HorizontalLayoutGroup>();
-            capLayout.padding = new RectOffset(10, 10, 5, 5);
-            capLayout.childAlignment = TextAnchor.MiddleCenter;
-            capLayout.childControlWidth = capLayout.childControlHeight = true;
-            var key = NewRect("Text", cap, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
-            StyleText(key, 22, Color.white, FontStyle.Bold);
-            key.alignment = TextAnchor.MiddleCenter;
-            var label = NewRect("Label", bar, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
-            StyleText(label, 24, Color.white, FontStyle.Normal);
-            var group = bar.gameObject.AddComponent<CanvasGroup>();
+            var iconRect = NewRect("Icon", row, Vector2.zero, Vector2.zero);
+            var icon = iconRect.gameObject.AddComponent<Image>();
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var size = iconRect.gameObject.AddComponent<LayoutElement>();
+            size.preferredWidth = size.preferredHeight = size.minWidth = size.minHeight = 44f;
+            var label = NewRect("Label", row, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
+            StyleText(label, 26, Color.white, FontStyle.Normal);
+            label.alignment = TextAnchor.MiddleLeft;
+            label.supportRichText = true;
+            var shadow = label.gameObject.AddComponent<Outline>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            shadow.effectDistance = new Vector2(1.2f, -1.2f);
+            var group = row.gameObject.AddComponent<CanvasGroup>();
             group.blocksRaycasts = false;
-            bar.gameObject.SetActive(false);
-            return (bar.gameObject, key, label, group);
+            row.gameObject.SetActive(false);
+            return (row.gameObject, icon, label, group);
         }
 
         /// <summary>Computer key hints along the bottom, like "[E] to get off"; pass none to hide.</summary>
@@ -333,7 +344,6 @@ namespace GlassRoom
             m_PhoneButtonText.color = phone ? k_OnAccent : k_Ink;
             PointerPicture.Apply(!phone);
             m_MouseRow.SetActive(!phone);
-            m_QNote.SetActive(!phone);
             if (m_HelpText != null) m_HelpText.text = HelpText(phone);
             // Each mode has its own sensitivity range, so the number changes with the mode.
             m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
@@ -506,21 +516,13 @@ namespace GlassRoom
             b.colors = colors;
             b.onClick.AddListener(ToggleMenu);
 
-            // A small "?" beside it opens the help, and the number of people here sits snug in the corner.
-            var help = NewRect("Help Button", root, Vector2.one, Vector2.one);
-            help.sizeDelta = new Vector2(108f, 56f);
-            help.anchoredPosition = new Vector2(-188f, -70f);
-            var helpBg = AddImage(help.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.62f), UISprites.RoundedPanel, true, 28f);
-            var hb = help.gameObject.AddComponent<Button>();
-            hb.targetGraphic = helpBg;
-            hb.onClick.AddListener(OpenHelp);
-            AddText(help, "Help", 26, Color.white, FontStyle.Bold);
-            var online = NewRect("Online", root, Vector2.one, Vector2.one);
-            online.pivot = new Vector2(1f, 1f);
-            online.sizeDelta = new Vector2(220f, 30f);
-            online.anchoredPosition = new Vector2(-24f, -122f);
-            m_Online = AddText(online, "", 20, Color.white, FontStyle.Bold);
-            m_Online.alignment = TextAnchor.UpperRight;
+            // The number of people here, small and snug in the bottom-left corner.
+            var online = NewRect("Online", root, Vector2.zero, Vector2.zero);
+            online.pivot = new Vector2(0f, 0f);
+            online.sizeDelta = new Vector2(220f, 26f);
+            online.anchoredPosition = new Vector2(10f, 4f);
+            m_Online = AddText(online, "", 18, Color.white, FontStyle.Bold);
+            m_Online.alignment = TextAnchor.LowerLeft;
             var outline = m_Online.gameObject.AddComponent<Outline>();
             outline.effectColor = new Color(0f, 0f, 0f, 0.55f);
             outline.effectDistance = new Vector2(1f, -1f);
@@ -611,12 +613,9 @@ namespace GlassRoom
             BuildHelpPage((RectTransform)m_Pages[3].transform);
             ShowTab(0);
 
-            // Computer: a small reminder in the bottom-left of the tabs.
-            var qNote = Corner(card, "Press Q to open/close", 20, k_Muted, new Vector2(400f, 0f));
-            qNote.rectTransform.anchorMin = qNote.rectTransform.anchorMax = new Vector2(0f, 0f);
-            qNote.rectTransform.pivot = new Vector2(0f, 0f);
-            qNote.rectTransform.anchoredPosition = new Vector2(400f, 50f);
-            qNote.alignment = TextAnchor.LowerLeft;
+            // Computer, with hints on: a small reminder beside the title.
+            var qNote = Corner(card, "Press Q to open/close", 20, k_Muted, new Vector2(196f, -42f));
+            qNote.alignment = TextAnchor.UpperLeft;
             m_QNote = qNote.gameObject;
 
             var done = NewRect("Done", card, new Vector2(1f, 0f), new Vector2(1f, 0f));
@@ -692,8 +691,11 @@ namespace GlassRoom
             m_NameField.lineType = InputField.LineType.SingleLine;
             m_NameField.onEndEdit.AddListener(_ =>
             {
+                // Enter saves. On phones the keyboard's own Return/Done key closes the
+                // keyboard without a key press reaching the game, so finishing typing saves.
                 var keyboard = UnityEngine.InputSystem.Keyboard.current;
-                if (keyboard != null && keyboard.enterKey.wasPressedThisFrame) SaveName();
+                bool enter = keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame);
+                if (enter || (InputModeManager.Mode == ControlMode.Touchscreen && !m_NameField.wasCanceled)) SaveName();
             });
 
             var save = NewRect("Save", page, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));

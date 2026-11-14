@@ -120,7 +120,7 @@ namespace GlassRoom.Editor
                 scooter.crashClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/GlassRoom/Audio/Scooter/Scooter Bump.wav");
                 scooter.crashHardClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/GlassRoom/Audio/Scooter/Scooter Crash Hard.wav");
                 scooter.acceleration = 4.3f;
-                scooter.headlightIntensity = 14f; // bright enough to show on the dark floor
+                scooter.headlightIntensity = 10f; // bright enough to show on the dark floor
                 EditorUtility.SetDirty(scooter);
             }
 
@@ -202,6 +202,8 @@ namespace GlassRoom.Editor
             var oldSpatter = hall.transform.Find("Wall Spatter");
             if (oldSpatter != null) Object.DestroyImmediate(oldSpatter.gameObject);
             GlassRoomProps.AddCrimeScene(hall.transform, new Vector3(-Width / 2f + 3.2f, 0f, Length / 2f - 3.6f));
+            // (After the scene is rebuilt: the body that can be pushed around replaces the still one.)
+            VictimRagdollBuilder.Ensure(hall.transform);
             if (speaker != null && nook != null) GlassRoomProps.PlaceOnRug(speaker.gameObject, nook);
             // The gallery look: plaster walls, dark ceiling with downlights, skylight slot.
             GalleryLook.Apply(hall.transform);

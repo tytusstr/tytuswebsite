@@ -540,11 +540,21 @@ namespace GlassRoom
                 {
                     int size = e.TryGetValue("s", out var z) ? System.Convert.ToInt32(z) : 1;
                     m_Loaded.Add(key);
-                    foreach (var line in lines.Split('|'))
+                    foreach (var entry in lines.Split('|'))
                     {
+                        // Each line's own colour and size, if saved with it.
+                        string line = entry;
+                        int lineColor = color, lineSize = size;
+                        int semi = entry.IndexOf(';');
+                        if (semi > 0)
+                        {
+                            var style = entry.Substring(0, semi).Split(',');
+                            if (style.Length == 2) { int.TryParse(style[0], out lineColor); int.TryParse(style[1], out lineSize); }
+                            line = entry.Substring(semi + 1);
+                        }
                         // Added as a finished line under this drawing's key.
                         m_Loaded.Remove(key);
-                        AddStroke(-3, ++id, color, size, line, true, false, key);
+                        AddStroke(-3, ++id, lineColor, lineSize, line, true, false, key);
                         m_Loaded.Add(key);
                     }
                 }
@@ -575,6 +585,15 @@ namespace GlassRoom
 
         public void Draw(List<List<Vector2>> lines, int color, int size)
         {
+            var colors = new List<int>();
+            var sizes = new List<int>();
+            foreach (var _ in lines) { colors.Add(color); sizes.Add(size); }
+            Draw(lines, colors, sizes);
+        }
+
+        /// <summary>A drawing whose lines each have their own colour and size.</summary>
+        public void Draw(List<List<Vector2>> lines, IList<int> colors, IList<int> sizes)
+        {
             if (Full) return;
             int budget = 2000;
             // One drawing: one key for all its lines (one entry), each line its own id.
@@ -582,8 +601,10 @@ namespace GlassRoom
             int batch = ++m_NextBatch;
             int lineNumber = 0;
             var saved = new List<string>();
-            foreach (var line in lines)
+            for (int l = 0; l < lines.Count; l++)
             {
+                var line = lines[l];
+                int color = colors[l], size = sizes[l];
                 if (line.Count == 0 || budget <= 0) continue;
                 int count = Mathf.Min(line.Count, budget);
                 budget -= count;
@@ -597,10 +618,11 @@ namespace GlassRoom
                     if (StrokeRequested != null) StrokeRequested(id, color, size, packed, last, key);
                     else AddStroke(LocalAuthor, id, color, size, packed, last, true, key);
                 }
-                saved.Add(StrokeGraphic.Pack(line, 0, count));
+                // Saved as "colour,size;points" so each line keeps its own.
+                saved.Add(color + "," + size + ";" + StrokeGraphic.Pack(line, 0, count));
             }
             if (saved.Count > 0)
-                StartCoroutine(Save(key, "{\"k\":\"d\",\"c\":" + color + ",\"s\":" + size + ",\"d\":" + Quote(string.Join("|", saved)) + "}"));
+                StartCoroutine(Save(key, "{\"k\":\"d\",\"c\":" + colors[0] + ",\"s\":" + sizes[0] + ",\"d\":" + Quote(string.Join("|", saved)) + "}"));
         }
 
         public void EraseAll()

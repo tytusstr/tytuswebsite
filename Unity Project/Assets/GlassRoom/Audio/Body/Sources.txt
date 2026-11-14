@@ -1,0 +1,5 @@
+All CC0 1.0 (public domain), from freesound.org, trimmed and normalised:
+Body Drag.wav: "R18-35-Drag Body Across Floor.wav" by craigsmith, https://freesound.org/s/481863/ (loops).
+Body Thud 1-3.wav: "bodyfall on carpet.wav" by kooust, https://freesound.org/s/455536/ (three of the falls).
+Body Hit.wav: "Falling body hits the floor" by courtneyeck, https://freesound.org/s/673424/.
+Blood Splat.wav: "Blood Splat" by Vikra9409, https://freesound.org/s/825524/.

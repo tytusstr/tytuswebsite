@@ -38,23 +38,30 @@ namespace GlassRoom
 
         public const int MaxLength = 150, MaxKept = 100;
         const float Width = 600f, ListHeight = 330f, FadeZone = 80f;
+        // In a notice, where the names go: "\u0001 joined", "\u0002 changed their name to \u0001".
+        public const string NameMark = "\u0001", OldNameMark = "\u0002";
 
-        public struct Message { public string name, text; public bool system; }
+        /// <summary>One message: who, what, whether it's a notice from the game, and when (realtime seconds).</summary>
+        public struct Message { public string name, text, oldName; public bool system; public float time; }
         readonly List<Message> m_History = new List<Message>();
-        readonly List<Text> m_Lines = new List<Text>();
+        readonly List<(CanvasGroup group, Text text, ChatUnderlines lines)> m_Lines = new List<(CanvasGroup, Text, ChatUnderlines)>();
         /// <summary>The last 100 messages, oldest first.</summary>
         public IReadOnlyList<Message> History => m_History;
+        /// <summary>How long ago this message was said, in seconds.</summary>
+        public static float Age(Message m) => Mathf.Max(0f, Time.realtimeSinceStartup - m.time);
 
-        RectTransform m_Root, m_Viewport, m_Content;
+        RectTransform m_Root, m_Viewport, m_Content, m_InputRect, m_OpenRect, m_HintRect, m_BottomHintRect;
         ScrollRect m_Scroll;
         InputField m_Input;
-        GameObject m_InputRow, m_OpenButton, m_Hint;
+        GameObject m_InputRow, m_OpenButton, m_Hint, m_BottomHint, m_BottomArrow;
         Font m_Font;
         AudioSource m_Sound;
         AudioClip m_JoinClip;
         bool m_Open, m_StickToBottom = true;
-        int m_ClosedFrame = -1, m_ScrollDown;
-
+        int m_ClosedFrame = -1, m_ScrollDown, m_Count;
+        float m_NextRefresh;
+        // Gliding down to the newest message: from where, when it started and how long it takes.
+        float m_GlideFrom = -1f, m_GlideStart, m_GlideTime;
         /// <summary>Builds the chat in the HUD's top-left corner.</summary>
         public static ChatBox Create(RectTransform parent, Font font)
         {
@@ -116,6 +123,7 @@ namespace GlassRoom
             row.anchoredPosition = new Vector2(0f, below);
             row.sizeDelta = new Vector2(Width, 60f);
             m_InputRow = row.gameObject;
+            m_InputRect = row;
             var box = NewRect("Box", row, Vector2.zero, Vector2.one);
             box.offsetMax = new Vector2(-130f, 0f);
             var boxBg = box.gameObject.AddComponent<Image>();
@@ -172,6 +180,7 @@ namespace GlassRoom
             openText.alignment = TextAnchor.MiddleCenter;
             openText.text = "Chat";
             m_OpenButton = open.gameObject;
+            m_OpenRect = open;
 
             // Computer, with hints on: how to start typing.
             var hint = NewRect("Chat Hint", m_Root, new Vector2(0f, 1f), new Vector2(0f, 1f));
@@ -185,55 +194,169 @@ namespace GlassRoom
             hintShadow.effectColor = new Color(0f, 0f, 0f, 0.55f);
             hintShadow.effectDistance = new Vector2(1.2f, -1.2f);
             m_Hint = hint.gameObject;
+            m_HintRect = hint;
+
+            // Computer, with hints on, after scrolling up: how to get back down.
+            var bottomHint = NewRect("Scroll Hint", m_Root, new Vector2(0f, 1f), new Vector2(0f, 1f));
+            bottomHint.pivot = new Vector2(0f, 1f);
+            bottomHint.sizeDelta = new Vector2(400f, 36f);
+            var bottomText = bottomHint.gameObject.AddComponent<Text>();
+            Style(bottomText, 22, new Color(1f, 1f, 1f, 0.8f));
+            bottomText.text = "V  scroll to bottom";
+            var bottomShadow = bottomHint.gameObject.AddComponent<Outline>();
+            bottomShadow.effectColor = new Color(0f, 0f, 0f, 0.55f);
+            bottomShadow.effectDistance = new Vector2(1.2f, -1.2f);
+            m_BottomHint = bottomHint.gameObject;
+            m_BottomHintRect = bottomHint;
+            m_BottomHint.SetActive(false);
+
+            // Mobile, after scrolling up: a round down-arrow at the bottom of the messages.
+            var arrow = NewRect("Scroll Down", m_Root, new Vector2(0f, 1f), new Vector2(0f, 1f));
+            arrow.pivot = new Vector2(1f, 0f);
+            arrow.sizeDelta = new Vector2(64f, 64f);
+            arrow.anchoredPosition = new Vector2(Width - 6f, -ListHeight + 6f);
+            var arrowBg = arrow.gameObject.AddComponent<Image>();
+            arrowBg.sprite = UISprites.Circle;
+            arrowBg.color = new Color(0.06f, 0.07f, 0.09f, 0.7f);
+            arrow.gameObject.AddComponent<Button>().onClick.AddListener(GlideToBottom);
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var bar = NewRect("Chevron", arrow, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+                bar.sizeDelta = new Vector2(22f, 5f);
+                bar.anchoredPosition = new Vector2(side * 7f, -2f);
+                bar.localRotation = Quaternion.Euler(0f, 0f, -side * 40f);
+                var img = bar.gameObject.AddComponent<Image>();
+                img.sprite = UISprites.RoundedPanel;
+                img.type = Image.Type.Sliced;
+                img.color = Color.white;
+                img.raycastTarget = false;
+            }
+            m_BottomArrow = arrow.gameObject;
+            m_BottomArrow.SetActive(false);
         }
 
         // ---- Messages ----
 
         /// <summary>A message from someone (you included).</summary>
-        public void Add(string name, string message) => AddLine(new Message { name = name, text = message });
+        public void Add(string name, string message) => AddLine(new Message { name = name, text = message, time = Time.realtimeSinceStartup });
 
-        /// <summary>A notice from the game, like someone joining.</summary>
-        public void Notice(string message) => AddLine(new Message { text = message, system = true });
+        /// <summary>A message from before you joined, said this many seconds ago.</summary>
+        public void AddOld(string name, string message, bool system, string oldName, float age) =>
+            AddLine(new Message { name = name, text = message, system = system, oldName = oldName, time = Time.realtimeSinceStartup - Mathf.Max(0f, age) });
 
-        /// <summary>A message from before you joined.</summary>
-        public void AddOld(string name, string message, bool system) => AddLine(new Message { name = name, text = message, system = system });
-
-        /// <summary>Someone has joined: a notice and a soft bell.</summary>
+        /// <summary>Someone has joined: "[name joined]" and a soft bell.</summary>
         public void Joined(string name)
         {
-            Notice((string.IsNullOrEmpty(name) ? "Someone" : name) + " joined");
+            AddLine(new Message { name = name, text = NameMark + " joined", system = true, time = Time.realtimeSinceStartup });
             if (m_JoinClip != null) m_Sound.PlayOneShot(m_JoinClip, 0.55f);
         }
+
+        /// <summary>Someone changed their name: "[old changed their name to new]".</summary>
+        public void Renamed(string oldName, string newName) =>
+            AddLine(new Message { name = newName, oldName = oldName, text = OldNameMark + " changed their name to " + NameMark, system = true, time = Time.realtimeSinceStartup });
+
+        // The line as shown, and where the names in it are (to underline them).
+        static string Compose(Message m, List<(int start, int length)> names)
+        {
+            names.Clear();
+            string Who(string n) => string.IsNullOrEmpty(n) ? "Someone" : n;
+            var sb = new System.Text.StringBuilder();
+            if (m.system)
+            {
+                sb.Append('[');
+                foreach (char c in m.text)
+                {
+                    string insert = c == NameMark[0] ? Who(m.name) : c == OldNameMark[0] ? Who(m.oldName) : null;
+                    if (insert == null) { sb.Append(c); continue; }
+                    names.Add((sb.Length, insert.Length));
+                    sb.Append(insert);
+                }
+                sb.Append(']');
+            }
+            else
+            {
+                names.Add((0, Who(m.name).Length));
+                sb.Append(Who(m.name)).Append(":  ").Append(m.text);
+            }
+            // How long ago, once it's a minute or more.
+            int minutes = Mathf.FloorToInt(Age(m) / 60f);
+            if (minutes >= 60) sb.Append("  [").Append(minutes / 60).Append("h ago]");
+            else if (minutes >= 1) sb.Append("  [").Append(minutes).Append("m ago]");
+            return sb.ToString();
+        }
+
+        readonly List<(int, int)> m_Names = new List<(int, int)>();
 
         void AddLine(Message m)
         {
             if (string.IsNullOrWhiteSpace(m.text)) return;
             if (m.text.Length > MaxLength) m.text = m.text.Substring(0, MaxLength);
             m_History.Add(m);
-            var rect = NewRect("Line", m_Content, Vector2.zero, Vector2.zero);
-            var text = rect.gameObject.AddComponent<Text>();
-            Style(text, 24, m.system ? new Color(1f, 1f, 1f, 0.75f) : Color.white);
+            // Each message on a shaded strip, light and dark grey in turn, so they're easy to tell apart.
+            var row = NewRect("Line", m_Content, Vector2.zero, Vector2.zero);
+            var bg = row.gameObject.AddComponent<Image>();
+            bg.sprite = UISprites.RoundedPanel;
+            bg.type = Image.Type.Sliced;
+            bg.pixelsPerUnitMultiplier = UISprites.RoundedPanel != null && UISprites.RoundedPanel.border.x > 0 ? UISprites.RoundedPanel.border.x / 8f : 1f;
+            bg.color = (m_Count++ % 2 == 0) ? new Color(0.30f, 0.31f, 0.33f, 0.42f) : new Color(0.07f, 0.075f, 0.085f, 0.5f);
+            bg.raycastTarget = false;
+            var rowLayout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            rowLayout.padding = new RectOffset(10, 10, 4, 5);
+            rowLayout.childControlWidth = rowLayout.childControlHeight = true;
+            rowLayout.childForceExpandWidth = true;
+            rowLayout.childForceExpandHeight = false;
+            var group = row.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            var textRect = NewRect("Text", row, Vector2.zero, Vector2.zero);
+            var text = textRect.gameObject.AddComponent<Text>();
+            Style(text, 24, m.system ? new Color(1f, 1f, 1f, 0.82f) : Color.white);
             text.supportRichText = false;
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Overflow;
             text.alignment = TextAnchor.UpperLeft;
             if (m.system) text.fontStyle = FontStyle.Italic;
-            string who = string.IsNullOrEmpty(m.name) ? "Someone" : m.name;
-            text.text = m.system ? m.text : who + ":  " + m.text;
-            var shadow = rect.gameObject.AddComponent<Outline>();
-            shadow.effectColor = new Color(0f, 0f, 0f, 0.65f);
-            shadow.effectDistance = new Vector2(1.5f, -1.5f);
-            m_Lines.Add(text);
+            var shadow = textRect.gameObject.AddComponent<Outline>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.55f);
+            shadow.effectDistance = new Vector2(1.2f, -1.2f);
+            var underlines = textRect.gameObject.AddComponent<ChatUnderlines>();
+            text.text = Compose(m, m_Names);
+            underlines.Set(text, m_Names);
+            m_Lines.Add((group, text, underlines));
             while (m_Lines.Count > MaxKept)
             {
-                Destroy(m_Lines[0].gameObject);
+                Destroy(m_Lines[0].group.gameObject);
                 m_Lines.RemoveAt(0);
                 m_History.RemoveAt(0);
             }
             if (m_StickToBottom) m_ScrollDown = 2;
         }
 
-        bool AtBottom() => m_Content.rect.height <= m_Viewport.rect.height + 1f || m_Scroll.verticalNormalizedPosition <= 0.02f;
+        // The "[4m ago]" parts move on as time passes.
+        void RefreshTimes()
+        {
+            for (int i = 0; i < m_Lines.Count && i < m_History.Count; i++)
+            {
+                string shown = Compose(m_History[i], m_Names);
+                if (m_Lines[i].text.text == shown) continue;
+                m_Lines[i].text.text = shown;
+                m_Lines[i].lines.Set(m_Lines[i].text, m_Names);
+            }
+        }
+
+        bool CanScroll => m_Content.rect.height > m_Viewport.rect.height + 1f;
+        bool AtBottom() => !CanScroll || m_Scroll.verticalNormalizedPosition <= 0.02f;
+
+        /// <summary>Scrolls smoothly down to the newest message: quick for a little, up to about a second and a half for a lot.</summary>
+        public void GlideToBottom()
+        {
+            if (!CanScroll) { m_StickToBottom = true; return; }
+            float from = m_Scroll.verticalNormalizedPosition;
+            if (from <= 0.001f) { m_StickToBottom = true; return; }
+            float distance = from * (m_Content.rect.height - m_Viewport.rect.height);
+            m_GlideFrom = from;
+            m_GlideStart = Time.unscaledTime;
+            m_GlideTime = Mathf.Clamp(distance / 2200f, 0.15f, 1.5f);
+        }
 
         // ---- Typing ----
 
@@ -264,7 +387,7 @@ namespace GlassRoom
         {
             string message = m_Input.text.Trim();
             if (message.Length > 0) Sent?.Invoke(message.Length > MaxLength ? message.Substring(0, MaxLength) : message);
-            m_StickToBottom = true;
+            if (message.Length > 0 && !AtBottom()) GlideToBottom();
             Close();
         }
 
@@ -287,6 +410,21 @@ namespace GlassRoom
             if (m_OpenButton.activeSelf != showButton) m_OpenButton.SetActive(showButton);
             bool showHint = on && !mobile && !m_Open && !menu && HintSettings.Enabled;
             if (m_Hint.activeSelf != showHint) m_Hint.SetActive(showHint);
+            bool scrolledUp = on && CanScroll && !AtBottom() && m_GlideFrom < 0f;
+            bool showBottomHint = showHint && scrolledUp;
+            if (m_BottomHint.activeSelf != showBottomHint) m_BottomHint.SetActive(showBottomHint);
+            bool showArrow = on && mobile && scrolledUp && !menu;
+            if (m_BottomArrow.activeSelf != showArrow) m_BottomArrow.SetActive(showArrow);
+
+            // The typing box, Chat button and hints sit just under the messages: at the top when
+            // there are none, moving down as they fill the space.
+            float shown = m_Lines.Count == 0 ? 0f : Mathf.Min(m_Content.rect.height, ListHeight);
+            float below = shown > 0f ? -shown - 12f : 0f;
+            m_InputRect.anchoredPosition = new Vector2(0f, below);
+            m_OpenRect.anchoredPosition = new Vector2(0f, below);
+            m_HintRect.anchoredPosition = new Vector2(2f, below - 4f);
+            m_BottomHintRect.anchoredPosition = new Vector2(2f, below - 36f);
+            ((RectTransform)m_BottomArrow.transform).anchoredPosition = new Vector2(Width - 6f, -shown + 6f);
 
             // Computer: Enter opens the box (not the same Enter that just sent a message), Esc
             // closes it, and the wheel scrolls back while typing.
@@ -296,6 +434,7 @@ namespace GlassRoom
                 if (!m_Open && !Typing && !menu && Time.frameCount != m_ClosedFrame
                     && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame)) Open();
                 else if (m_Open && keyboard.escapeKey.wasPressedThisFrame) Close();
+                else if (!m_Open && !Typing && !menu && keyboard.vKey.wasPressedThisFrame) GlideToBottom();
             }
             var mouse = Mouse.current;
             if (m_Open && mouse != null && m_Content.rect.height > m_Viewport.rect.height)
@@ -308,8 +447,18 @@ namespace GlassRoom
                 }
             }
 
+            // Gliding down (eased), then staying with the newest.
+            if (m_GlideFrom >= 0f)
+            {
+                float t = m_GlideTime > 0f ? Mathf.Clamp01((Time.unscaledTime - m_GlideStart) / m_GlideTime) : 1f;
+                m_Scroll.StopMovement();
+                m_Scroll.verticalNormalizedPosition = Mathf.Lerp(m_GlideFrom, 0f, 1f - (1f - t) * (1f - t) * (1f - t));
+                if (t >= 1f) { m_GlideFrom = -1f; m_StickToBottom = true; }
+            }
+            if (Time.unscaledTime >= m_NextRefresh) { m_NextRefresh = Time.unscaledTime + 10f; RefreshTimes(); }
+
             // New messages keep the newest in view (unless you've scrolled up to read back).
-            if (m_ScrollDown > 0)
+            if (m_ScrollDown > 0 && m_GlideFrom < 0f)
             {
                 Canvas.ForceUpdateCanvases();
                 m_Scroll.verticalNormalizedPosition = 0f;
@@ -321,22 +470,15 @@ namespace GlassRoom
         // Messages fade out as they near the top of the box.
         void FadeTop()
         {
-            if (m_Content.rect.height <= m_Viewport.rect.height) { foreach (var t in m_Lines) SetAlpha(t, 1f); return; }
+            if (!CanScroll) { foreach (var l in m_Lines) l.group.alpha = 1f; return; }
             float top = m_Viewport.rect.yMax;
-            foreach (var t in m_Lines)
+            foreach (var l in m_Lines)
             {
-                var r = t.rectTransform;
+                var r = (RectTransform)l.group.transform;
                 Vector3 centre = m_Viewport.InverseTransformPoint(r.TransformPoint(r.rect.center));
-                SetAlpha(t, Mathf.Clamp01((top - centre.y) / FadeZone));
+                float a = Mathf.Clamp01((top - centre.y) / FadeZone);
+                if (Mathf.Abs(l.group.alpha - a) > 0.01f) l.group.alpha = a;
             }
-        }
-
-        static void SetAlpha(Text t, float a)
-        {
-            var c = t.color;
-            if (Mathf.Abs(c.a - a) < 0.01f) return;
-            c.a = a;
-            t.color = c;
         }
 
         void Style(Text text, int size, Color color)

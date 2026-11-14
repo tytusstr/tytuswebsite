@@ -94,9 +94,9 @@
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
-  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
+  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" enterkeyhint="go" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
   <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
-  <div id="nameEdit"><div class="col"><input id="editInput" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
+  <div id="nameEdit"><div class="col"><input id="editInput" type="text" enterkeyhint="done" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
     // Phones (Safari) can refuse to restart the sound when you come back to the page
     // ("Failed to start the audio device"). That's not fatal: keep the game running and

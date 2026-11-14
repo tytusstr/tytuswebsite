@@ -1,1 +1,2 @@
 RickAstleyCursor*.png: cut out and cropped from "Rick Astley at BAFTA 2026.jpg" by JaceMerlyn, commons.wikimedia.org/wiki/File:Rick_Astley_at_BAFTA_2026.jpg, CC BY-SA 4.0 (creativecommons.org/licenses/by-sa/4.0). Background removed, cropped to the head and resized.
+Head Hidden Variant.mat: keeps the URP Lit variant (normal map + alpha clip) in the build, used to hide your own head from your view while seated (LocalPlayerBody).

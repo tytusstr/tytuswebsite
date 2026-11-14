@@ -105,7 +105,7 @@ namespace GlassRoom
 
         [Header("Headlight")]
         [Tooltip("Brightness of the headlight when fully on.")]
-        public float headlightIntensity = 14f;
+        public float headlightIntensity = 10f;
         [Tooltip("Seconds to fade on after stepping on, and off after stepping off.")]
         public float headlightFade = 1.2f;
         Light m_Headlight;
@@ -191,25 +191,37 @@ namespace GlassRoom
             transform.position += direction * length;
         }
 
-        // A light at the strip on the front of the deck, shining ahead and a little down.
+        // The front strip lights the way: a row of lights along the whole strip, a few
+        // millimetres in front of it (never inside the scooter), shining ahead and slightly down.
+        Light[] m_Headlights;
+        const int HeadlightCount = 3;
+
         void BuildHeadlight()
         {
             var strip = transform.Find("Front Light");
-            Vector3 local = strip != null ? strip.localPosition : new Vector3(0f, 0.08f, 0.35f);
-            var go = new GameObject("Headlight");
-            go.transform.SetParent(transform, false);
-            // Right at the light strip, tipped down so the beam starts at the scooter.
-            go.transform.localPosition = local + new Vector3(0f, 0.01f, -0.01f);
-            go.transform.localRotation = Quaternion.Euler(26f, 0f, 0f);
-            m_Headlight = go.AddComponent<Light>();
-            m_Headlight.type = LightType.Spot;
-            m_Headlight.color = new Color(0.92f, 0.96f, 1f);
-            m_Headlight.spotAngle = 96f;
-            m_Headlight.innerSpotAngle = 55f;
-            m_Headlight.range = 14f;
-            m_Headlight.intensity = 0f;
-            m_Headlight.shadows = LightShadows.None;
-            m_Headlight.enabled = false;
+            Vector3 local = strip != null ? strip.localPosition : new Vector3(0f, 0.09f, 0.321f);
+            float width = strip != null ? strip.localScale.x : 0.36f;
+            float front = local.z + (strip != null ? strip.localScale.z * 0.5f : 0.002f) + 0.004f;
+            m_Headlights = new Light[HeadlightCount];
+            for (int i = 0; i < HeadlightCount; i++)
+            {
+                var go = new GameObject("Headlight " + (i + 1));
+                go.transform.SetParent(transform, false);
+                float x = (i - (HeadlightCount - 1) * 0.5f) * (width * 0.8f / (HeadlightCount - 1));
+                go.transform.localPosition = new Vector3(x, local.y, front);
+                go.transform.localRotation = Quaternion.Euler(6f, 0f, 0f);
+                var light = go.AddComponent<Light>();
+                light.type = LightType.Spot;
+                light.color = new Color(0.92f, 0.96f, 1f);
+                light.spotAngle = 80f;
+                light.innerSpotAngle = 40f;
+                light.range = 13f;
+                light.intensity = 0f;
+                light.shadows = LightShadows.None;
+                light.enabled = false;
+                m_Headlights[i] = light;
+            }
+            m_Headlight = m_Headlights[HeadlightCount / 2];
             if (strip != null)
             {
                 m_HeadlightStrip = strip.GetComponent<Renderer>();
@@ -217,8 +229,8 @@ namespace GlassRoom
                     m_StripGlow = m_HeadlightStrip.sharedMaterial.GetColor(k_EmissionId);
                 m_StripBlock = new MaterialPropertyBlock();
             }
-            ShowHeadlight();
             BuildRearLight();
+            ShowHeadlight();
         }
 
         // A dim red strip across the back of the deck, lit while someone rides.
@@ -228,26 +240,30 @@ namespace GlassRoom
 
         void BuildRearLight()
         {
+            // Flat against the back face of the deck, the same size as the front strip.
+            var front = transform.Find("Front Light");
             var strip = GameObject.CreatePrimitive(PrimitiveType.Cube);
             strip.name = "Rear Light";
             Destroy(strip.GetComponent<Collider>());
             strip.transform.SetParent(transform, false);
-            strip.transform.localPosition = new Vector3(0f, 0.085f, -0.345f);
-            strip.transform.localScale = new Vector3(0.24f, 0.014f, 0.012f);
+            float back = front != null ? -front.localPosition.z : -0.321f;
+            strip.transform.localPosition = new Vector3(0f, front != null ? front.localPosition.y : 0.09f, back);
+            strip.transform.localScale = front != null ? front.localScale : new Vector3(0.36f, 0.012f, 0.004f);
             m_RearStrip = strip.GetComponent<Renderer>();
             var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            mat.SetColor("_BaseColor", new Color(0.25f, 0.02f, 0.02f));
+            mat.SetColor("_BaseColor", new Color(0.22f, 0.03f, 0.03f));
+            mat.SetFloat("_Smoothness", 0.3f);
             mat.EnableKeyword("_EMISSION");
             mat.SetColor("_EmissionColor", Color.black);
             m_RearStrip.material = mat;
             m_RearStrip.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             var glow = new GameObject("Rear Glow");
             glow.transform.SetParent(transform, false);
-            glow.transform.localPosition = new Vector3(0f, 0.1f, -0.38f);
+            glow.transform.localPosition = new Vector3(0f, strip.transform.localPosition.y, back - 0.03f);
             m_RearGlow = glow.AddComponent<Light>();
             m_RearGlow.type = LightType.Point;
             m_RearGlow.color = k_Red;
-            m_RearGlow.range = 1.1f;
+            m_RearGlow.range = 0.6f;
             m_RearGlow.intensity = 0f;
             m_RearGlow.shadows = LightShadows.None;
             m_RearGlow.enabled = false;
@@ -266,12 +282,15 @@ namespace GlassRoom
         {
             // Eased, so it glows up softly rather than switching.
             float level = Mathf.SmoothStep(0f, 1f, m_HeadlightLevel);
-            m_Headlight.intensity = headlightIntensity * level;
-            m_Headlight.enabled = level > 0.001f;
+            foreach (var light in m_Headlights)
+            {
+                light.intensity = headlightIntensity / HeadlightCount * level;
+                light.enabled = level > 0.001f;
+            }
             if (m_RearStrip != null)
             {
-                m_RearStrip.material.SetColor("_EmissionColor", k_Red * (1.6f * level));
-                m_RearGlow.intensity = 0.5f * level;
+                m_RearStrip.material.SetColor("_EmissionColor", k_Red * (0.55f * level));
+                m_RearGlow.intensity = 0.12f * level;
                 m_RearGlow.enabled = level > 0.001f;
             }
             if (m_HeadlightStrip != null)

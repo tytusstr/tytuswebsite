@@ -43,6 +43,17 @@ mergeInto(LibraryManager.library, {
     return (typeof window.isMobileDevice === "function" && window.isMobileDevice()) ? 1 : 0;
   },
 
+  // Lost the room: reload the page to join again (so nobody plays on in a room of their own).
+  // If that already happened in the last minute, show the message and a Reload button instead.
+  WebPage_Reload: function (messagePtr) {
+    var message = UTF8ToString(messagePtr);
+    var last = 0;
+    try { last = Number(sessionStorage.getItem("glassRoomAutoReload") || 0); } catch (e) {}
+    if (Date.now() - last < 60000) { if (typeof window.showGone === "function") window.showGone(message); return; }
+    try { sessionStorage.setItem("glassRoomAutoReload", String(Date.now())); } catch (e) {}
+    location.reload();
+  },
+
   // The game has stopped for this player: a message and a Reload button over everything.
   WebPage_ShowGone: function (messagePtr) {
     if (typeof window.showGone === "function") window.showGone(UTF8ToString(messagePtr));

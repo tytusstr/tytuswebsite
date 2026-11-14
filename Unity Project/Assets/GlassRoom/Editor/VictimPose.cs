@@ -45,21 +45,7 @@ namespace GlassRoom.Editor
             var inst = (GameObject)Object.Instantiate(model);
             try
             {
-                inst.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                foreach (var (bone, axis, degrees) in Pose)
-                {
-                    var t = Find(inst.transform, bone);
-                    if (t == null) { Debug.LogWarning("Victim pose: no bone " + bone); continue; }
-                    t.rotation = Quaternion.AngleAxis(degrees, axis) * t.rotation;
-                }
-                // Loosely curled fingers.
-                foreach (var t in inst.GetComponentsInChildren<Transform>())
-                    foreach (var c in CurlBones)
-                        if (t.name.EndsWith(c) || t.name.EndsWith(c + "1"))
-                            t.localRotation = t.localRotation * Quaternion.Euler(0f, 0f, -25f);
-
-                var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>();
-                Settle(inst.transform, smr);
+                var smr = PoseSkeleton(inst);
                 var mesh = new Mesh { name = "Victim Posed", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
                 smr.BakeMesh(mesh, true);
                 // Into the model's own space (the renderer may sit under a scaled/rotated node).
@@ -86,6 +72,26 @@ namespace GlassRoom.Editor
                 return mesh;
             }
             finally { Object.DestroyImmediate(inst); }
+        }
+
+        /// <summary>Poses a fresh copy of the model (standing at the origin) as the victim; returns its skin.</summary>
+        public static SkinnedMeshRenderer PoseSkeleton(GameObject inst)
+        {
+            inst.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            foreach (var (bone, axis, degrees) in Pose)
+            {
+                var t = Find(inst.transform, bone);
+                if (t == null) { Debug.LogWarning("Victim pose: no bone " + bone); continue; }
+                t.rotation = Quaternion.AngleAxis(degrees, axis) * t.rotation;
+            }
+            // Loosely curled fingers.
+            foreach (var t in inst.GetComponentsInChildren<Transform>())
+                foreach (var c in CurlBones)
+                    if (t.name.EndsWith(c) || t.name.EndsWith(c + "1"))
+                        t.localRotation = t.localRotation * Quaternion.Euler(0f, 0f, -25f);
+            var smr = inst.GetComponentInChildren<SkinnedMeshRenderer>();
+            Settle(inst.transform, smr);
+            return smr;
         }
 
         // Lying face down, the floor is the plane the front of the chest rests on (the largest

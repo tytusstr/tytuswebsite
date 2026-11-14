@@ -369,9 +369,17 @@ namespace GlassRoom
             if (m_Drawing)
             {
                 if (m_Lines.Count == 0) return;
+                // Each line in the colour and size it was drawn with.
                 var lines = new List<List<Vector2>>();
-                foreach (var line in m_Lines) lines.Add(new List<Vector2>(line.points));
-                board.Draw(lines, m_Color, m_Size);
+                var colors = new List<int>();
+                var sizes = new List<int>();
+                foreach (var line in m_Lines)
+                {
+                    lines.Add(new List<Vector2>(line.points));
+                    colors.Add(Mathf.Max(0, System.Array.IndexOf(MarkerBoard.Colors, line.color)));
+                    sizes.Add(Mathf.Max(0, System.Array.IndexOf(MarkerBoard.Sizes, line.width)));
+                }
+                board.Draw(lines, colors, sizes);
                 ClearLines();
             }
             else

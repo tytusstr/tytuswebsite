@@ -94,9 +94,9 @@
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
-  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
+  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" enterkeyhint="go" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
   <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
-  <div id="nameEdit"><div class="col"><input id="editInput" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
+  <div id="nameEdit"><div class="col"><input id="editInput" type="text" enterkeyhint="done" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
     // Phones (Safari) can refuse to restart the sound when you come back to the page
     // ("Failed to start the audio device"). That's not fatal: keep the game running and
@@ -153,9 +153,9 @@
     var fill = document.getElementById("fill");
     var config = {
       arguments: [],
-      dataUrl: "Build/728d66cb722ccef441e9d2e2ccc45b6b.data.unityweb",
-      frameworkUrl: "Build/c51e6e4623dc7b5fea0dc1d6281de6f4.framework.js.unityweb",
-      codeUrl: "Build/c6828fa7ca6323d10fad342e39cea5fc.wasm.unityweb",
+      dataUrl: "Build/cac1c518026188a34d6e86dc207c9471.data.unityweb",
+      frameworkUrl: "Build/d8f18b3dc1bf1ca67fdf9d1356a7ae4f.framework.js.unityweb",
+      codeUrl: "Build/51ffe6adafebe7b5d635f412d44a347a.wasm.unityweb",
       streamingAssetsUrl: "StreamingAssets",
       companyName: "DefaultCompany",
       productName: "Tytuswebsite",
@@ -373,7 +373,7 @@
     enter.addEventListener("click", enterGame);
     var backupTimer = null;
     var script = document.createElement("script");
-    script.src = "Build/27e1ead146501465b1ae519a91dc5925.loader.js";
+    script.src = "Build/99c551e21af7065540d67a10946e7f1f.loader.js";
     script.onload = function () {
       createUnityInstance(canvas, config, function (progress) {
         fill.style.width = (100 * progress) + "%";

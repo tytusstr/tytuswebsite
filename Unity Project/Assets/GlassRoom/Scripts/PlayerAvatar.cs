@@ -277,20 +277,21 @@ namespace GlassRoom
             m_LowerSpine.rotation = Quaternion.AngleAxis(-m_HipTwist, up) * m_LowerSpine.rotation;
         }
 
-        // The turn is shared out: a little in the upper back, more in the neck, most in the head.
-        // Looking up and down bends only the neck and head. The shoulders hang from the neck in
-        // these skeletons, so they're held where they were: the arms never move with the head.
+        // Only the neck and head turn (the body follows on its own once the head is far enough
+        // round). The shoulders hang from the neck in these skeletons, so they're put back
+        // exactly where they were, place and turn: the arms stay with the body, never the head.
         void TurnHead()
         {
             Vector3 right = transform.right;
             float yawSoFar = 0f;
-            Bend(m_Spine, 0.25f, 0f, ref yawSoFar, right);
+            Vector3 leftAt = m_LClavicle != null ? m_LClavicle.position : Vector3.zero;
+            Vector3 rightAt = m_RClavicle != null ? m_RClavicle.position : Vector3.zero;
             Quaternion left = m_LClavicle != null ? m_LClavicle.rotation : Quaternion.identity;
             Quaternion rightShoulder = m_RClavicle != null ? m_RClavicle.rotation : Quaternion.identity;
-            Bend(m_Neck, 0.35f, 0.4f, ref yawSoFar, right);
-            Bend(m_Head, 0.40f, 0.6f, ref yawSoFar, right);
-            if (m_LClavicle != null) m_LClavicle.rotation = left;
-            if (m_RClavicle != null) m_RClavicle.rotation = rightShoulder;
+            Bend(m_Neck, 0.45f, 0.4f, ref yawSoFar, right);
+            Bend(m_Head, 0.55f, 0.6f, ref yawSoFar, right);
+            if (m_LClavicle != null) m_LClavicle.SetPositionAndRotation(leftAt, left);
+            if (m_RClavicle != null) m_RClavicle.SetPositionAndRotation(rightAt, rightShoulder);
         }
 
         void Bend(Transform bone, float yawShare, float pitchShare, ref float yawSoFar, Vector3 bodyRight)

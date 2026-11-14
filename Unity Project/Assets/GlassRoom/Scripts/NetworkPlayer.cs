@@ -60,8 +60,11 @@ namespace GlassRoom
         Vector3 m_LastPosition;
         bool m_LeftFoot;
 
+        float m_SpawnedAt;
+
         public override void Spawned()
         {
+            m_SpawnedAt = Time.unscaledTime;
             Multiplayer.Players.Add(this);
             m_Me = FindAnyObjectByType<FirstPersonController>();
             m_Radio = FindAnyObjectByType<MusicSpeaker>();
@@ -82,6 +85,9 @@ namespace GlassRoom
                 MarkerBoard.TextRequested += OnBoardText;
                 MarkerBoard.StrokeRequested += OnBoardStroke;
                 MarkerBoard.EraseRequested += OnBoardErase;
+                VictimBody.PoseShared += OnBodyPose;
+                VictimBody.StainShared += OnBodyStain;
+                VictimBody.SoundShared += OnBodySound;
             }
             else
             {
@@ -114,6 +120,9 @@ namespace GlassRoom
             MarkerBoard.TextRequested -= OnBoardText;
             MarkerBoard.StrokeRequested -= OnBoardStroke;
             MarkerBoard.EraseRequested -= OnBoardErase;
+            VictimBody.PoseShared -= OnBodyPose;
+            VictimBody.StainShared -= OnBodyStain;
+            VictimBody.SoundShared -= OnBodySound;
             if (m_Avatar != null) Destroy(m_Avatar.gameObject);
         }
 
@@ -206,6 +215,24 @@ namespace GlassRoom
         }
 
         // Your prints, tracks, squelches and other sounds, sent to everyone else.
+        // ---- The body on the floor: where it is, blood it splashes on walls, its thuds ----
+
+        void OnBodyPose(string packed) { if (Mine) RPC_BodyPose(packed); }
+        void OnBodyStain(Vector3 at, Vector3 normal, float size) { if (Mine) RPC_BodyStain(at, normal, size); }
+        void OnBodySound(int kind, Vector3 at, float loudness) { if (Mine) RPC_BodySound((byte)kind, at, loudness); }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
+        void RPC_BodyPose(string packed) { if (VictimBody.Instance != null) VictimBody.Instance.ShowRemote(packed, false); }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_BodyPoseFor([RpcTarget] PlayerRef player, string packed) { if (VictimBody.Instance != null) VictimBody.Instance.ShowRemote(packed, true); }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
+        void RPC_BodyStain(Vector3 at, Vector3 normal, float size) { if (VictimBody.Instance != null) VictimBody.Instance.WallStain(at, normal, size, false); }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
+        void RPC_BodySound(byte kind, Vector3 at, float loudness) { if (VictimBody.Instance != null) VictimBody.Instance.Sound(kind, at, loudness, false); }
+
         void OnMarkPlaced(bool tyre, Vector3 at, float yaw, Vector3 size, float strength, bool mirror)
         {
             if (Object != null && Object.IsValid && HasStateAuthority) RPC_Mark(tyre, at, yaw, size, strength, mirror);
@@ -305,13 +332,26 @@ namespace GlassRoom
             float until = Time.unscaledTime + 1.5f;
             while (Time.unscaledTime < until && PlayerName.Length == 0) yield return null;
             if (ChatBox.Instance != null) ChatBox.Instance.Joined(PlayerName.ToString());
+            m_ShownName = PlayerName.ToString();
+        }
+
+        // The name everyone last saw for this player; a change after joining is announced.
+        string m_ShownName;
+
+        void CheckRename()
+        {
+            if (m_ShownName == null || Object == null || !Object.IsValid) return;
+            string now = PlayerName.ToString();
+            if (now == m_ShownName) return;
+            if (ChatBox.Instance != null) ChatBox.Instance.Renamed(m_ShownName, now);
+            m_ShownName = now;
         }
 
         // Someone new: what's been said so far.
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-        void RPC_ChatFor([RpcTarget] PlayerRef player, string name, string message, NetworkBool system)
+        void RPC_ChatFor([RpcTarget] PlayerRef player, string name, string message, NetworkBool system, string oldName, float age)
         {
-            if (ChatBox.Instance != null) ChatBox.Instance.AddOld(name, message, system);
+            if (ChatBox.Instance != null) ChatBox.Instance.AddOld(name, message, system, oldName, age);
         }
 
         IEnumerator SendChatTo(PlayerRef player)
@@ -322,7 +362,7 @@ namespace GlassRoom
             foreach (var m in messages)
             {
                 if (Object == null || !Object.IsValid) yield break;
-                RPC_ChatFor(player, m.name ?? "", m.text, m.system);
+                RPC_ChatFor(player, m.name ?? "", m.text, m.system, m.oldName ?? "", ChatBox.Age(m));
                 if (++sent % 10 == 0) yield return null;
             }
         }
@@ -373,6 +413,9 @@ namespace GlassRoom
                 if (++sent % 12 == 0) yield return null;
             }
             // (The board they load themselves, from where it's kept online.)
+            // Where the body lies now, if it's been moved.
+            var victim = VictimBody.Instance;
+            if (victim != null && victim.EverMoved && Object != null && Object.IsValid) RPC_BodyPoseFor(player, victim.Pack());
             yield return SendChatTo(player);
         }
 
@@ -386,6 +429,9 @@ namespace GlassRoom
 
         public override void Render()
         {
+            // Names: known a moment after arriving; changes after that go in the chat.
+            if (m_ShownName == null && Time.unscaledTime - m_SpawnedAt > 2.5f) m_ShownName = PlayerName.ToString();
+            CheckRename();
             if (HasStateAuthority) return;
 
             // Scooters follow them if they rode them last.
@@ -408,9 +454,9 @@ namespace GlassRoom
                 m_Avatar.name = "Player " + PlayerId;
                 // You bump into other people rather than walking through them.
                 var body = m_Avatar.gameObject.AddComponent<CapsuleCollider>();
-                body.center = new Vector3(0f, 0.9f, 0f);
-                body.height = 1.75f;
-                body.radius = 0.25f;
+                body.center = new Vector3(0f, 0.85f, 0f);
+                body.height = 1.7f;
+                body.radius = 0.18f;
                 m_Body = body;
                 m_AvatarShown = AvatarIndex;
                 // Looking where they're looking from the first frame.

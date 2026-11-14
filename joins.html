@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Who joined</title>
+<style>
+  :root { --bg: #0d0e10; --card: #17181b; --ink: #ecedf0; --muted: #8b8e96; --line: #26282d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 20px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; }
+  td.n { color: var(--muted); width: 3em; }
+  tr:last-child td { border-bottom: 0; }
+  td.when { white-space: nowrap; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Who joined</h1>
+  <p id="summary">Loading…</p>
+  <table><thead><tr><th>#</th><th>Name</th><th>Last joined</th></tr></thead><tbody id="rows"></tbody></table>
+</main>
+<script>
+  // The game keeps one entry per name (the latest 200) in its online database.
+  fetch("https://tytuswebsite-board-default-rtdb.firebaseio.com/joins.json", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var list = Object.keys(data || {}).map(function (k) { return data[k]; }).filter(function (e) { return e && e.ms; });
+      list.sort(function (a, b) { return b.ms - a.ms; });
+      var fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      var rows = document.getElementById("rows");
+      list.forEach(function (e, i) {
+        var tr = document.createElement("tr");
+        [String(i + 1), String(e.n), fmt.format(new Date(e.ms))].forEach(function (text, c) {
+          var td = document.createElement("td");
+          td.textContent = text;
+          td.className = c === 0 ? "n" : c === 2 ? "when" : "";
+          tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      document.getElementById("summary").textContent = list.length + (list.length === 1 ? " person" : " people") + ", newest first (times in your time zone).";
+    })
+    .catch(function () { document.getElementById("summary").textContent = "Couldn't load the list."; });
+</script>
+</body>
+</html>

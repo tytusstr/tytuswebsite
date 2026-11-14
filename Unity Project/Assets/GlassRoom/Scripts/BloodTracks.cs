@@ -64,6 +64,13 @@ namespace GlassRoom
             }
         }
 
+        /// <summary>New blood on the floor (where the body was dragged): walking or riding through it spreads it too.</summary>
+        public void AddPool(Vector3 centre, float radius)
+        {
+            m_Pools.Add(new Pool { centre = new Vector3(centre.x, 0f, centre.z), radius = radius });
+            if (m_Pools.Count > 400) m_Pools.RemoveAt(10); // (the crime scene's own pools come first and stay)
+        }
+
         // ---- Shared with other players (see NetworkPlayer) ----
 
         /// <summary>A print or track you made: tyre track or footprint, where, which way, how big, how strong.</summary>

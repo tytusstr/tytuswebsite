@@ -85,6 +85,15 @@ namespace GlassRoom
                 foreach (var m in r.materials)
                     if (m != null && m.name.ToLowerInvariant().Contains("opacity")) list.Add(m);
             m_SeeThrough = list.ToArray();
+            var heads = new System.Collections.Generic.List<Material>();
+            foreach (var r in m_Avatar.GetComponentsInChildren<Renderer>())
+                foreach (var m in r.materials)
+                {
+                    string n = m != null ? m.name.ToLowerInvariant() : "";
+                    if (n.Contains(" head") || n.Contains("keffiyeh")) heads.Add(m);
+                }
+            m_Head = heads.ToArray();
+            m_HeadHidden = false;
             m_ShowingSelf = false;
         }
 
@@ -122,12 +131,30 @@ namespace GlassRoom
         Vector3 m_SeatedEye;
         bool m_HasSeatedEye;
 
+        // Your own head, hidden from your own view while seated (you'd see inside it looking
+        // down), but still there in mirrors, reflections and for everyone else.
+        Material[] m_Head;
+        bool m_HeadHidden;
+
+        void HideHead(bool hide)
+        {
+            if (hide == m_HeadHidden || m_Head == null) return;
+            m_HeadHidden = hide;
+            foreach (var m in m_Head)
+            {
+                if (m == null) continue;
+                if (hide) { m.EnableKeyword("_ALPHATEST_ON"); m.SetFloat("_AlphaClip", 1f); m.SetFloat("_Cutoff", 1.01f); }
+                else { m.DisableKeyword("_ALPHATEST_ON"); m.SetFloat("_AlphaClip", 0f); m.SetFloat("_Cutoff", 0.5f); }
+            }
+        }
+
         void BeforeRender(ScriptableRenderContext context, Camera camera)
         {
+            HideHead(camera == m_Camera && m_ShowingSelf);
             if (camera != m_Camera) return;
             if (!m_ShowingSelf || m_Avatar == null || m_Avatar.Neck == null) { m_HasSeatedEye = false; return; }
             var root = m_Avatar.transform;
-            Vector3 eye = m_Avatar.Neck.position + root.up * 0.17f + Quaternion.Euler(0f, root.eulerAngles.y, 0f) * Vector3.forward * 0.13f;
+            Vector3 eye = m_Avatar.Neck.position + root.up * 0.17f + Quaternion.Euler(0f, root.eulerAngles.y, 0f) * Vector3.forward * 0.17f;
             m_SeatedEye = m_HasSeatedEye ? Vector3.Lerp(m_SeatedEye, eye, 1f - Mathf.Exp(-6f * Time.deltaTime)) : eye;
             m_HasSeatedEye = true;
             camera.transform.position = m_SeatedEye;
