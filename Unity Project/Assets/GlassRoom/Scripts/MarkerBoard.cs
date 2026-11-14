@@ -186,6 +186,20 @@ namespace GlassRoom
             var rect = (RectTransform)canvasGo.transform;
             rect.sizeDelta = new Vector2(UnitsWide, UnitsHigh);
             rect.localScale = Vector3.one * 0.001f;
+            // A small cloud in the top-left corner (it's saved online): under everything, so
+            // it can be drawn over, and not part of what's erased.
+            var cloudTex = Resources.Load<Texture2D>("Icons/Cloud");
+            if (cloudTex != null)
+            {
+                var cloud = NewRect("Cloud", rect);
+                cloud.anchorMin = cloud.anchorMax = cloud.pivot = new Vector2(0f, 1f);
+                cloud.sizeDelta = new Vector2(64f, 64f * cloudTex.height / cloudTex.width);
+                cloud.anchoredPosition = new Vector2(14f, -12f);
+                var cloudImage = cloud.gameObject.AddComponent<RawImage>();
+                cloudImage.texture = cloudTex;
+                cloudImage.color = new Color(0.1f, 0.1f, 0.12f, 0.55f);
+                cloudImage.raycastTarget = false;
+            }
             m_Content = NewRect("Content", rect);
             m_Content.anchorMin = Vector2.zero;
             m_Content.anchorMax = Vector2.one;
