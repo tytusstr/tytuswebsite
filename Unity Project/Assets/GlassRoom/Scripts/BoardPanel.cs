@@ -260,23 +260,13 @@ namespace GlassRoom
 
         // ---- The text box ----
 
-        // The box stays on the board, at least a little size, and no bigger than the words need
-        // at the largest letters (so it can't be stretched far past them).
+        // The box stays on the board and at least a little size; otherwise it can be as big as
+        // you like, up to the whole board.
         void FitBox()
         {
-            string s = string.IsNullOrEmpty(m_Input.text) ? "Text" : m_Input.text;
             m_Preview.text = m_Input.text;
-            var settings = m_Preview.GetGenerationSettings(new Vector2(m_Box.width, m_Box.height));
-            settings.resizeTextForBestFit = false;
-            settings.fontSize = MarkerBoard.TextMaxSize;
-            settings.horizontalOverflow = HorizontalWrapMode.Overflow;
-            var gen = new TextGenerator();
-            float maxW = Mathf.Clamp(gen.GetPreferredWidth(s, settings) / m_Preview.pixelsPerUnit + 16f, 80f, BoardW);
-            float w = Mathf.Clamp(m_Box.width, 80f, maxW);
-            settings.horizontalOverflow = HorizontalWrapMode.Wrap;
-            settings.generationExtents = new Vector2(w, 10000f);
-            float maxH = Mathf.Clamp(gen.GetPreferredHeight(s, settings) / m_Preview.pixelsPerUnit + 10f, 40f, BoardH);
-            float h = Mathf.Clamp(m_Box.height, 40f, maxH);
+            float w = Mathf.Clamp(m_Box.width, 80f, BoardW);
+            float h = Mathf.Clamp(m_Box.height, 40f, BoardH);
             m_Box.size = new Vector2(w, h);
             m_Box.x = Mathf.Clamp(m_Box.x, 0f, BoardW - w);
             m_Box.y = Mathf.Clamp(m_Box.y, 0f, BoardH - h);
