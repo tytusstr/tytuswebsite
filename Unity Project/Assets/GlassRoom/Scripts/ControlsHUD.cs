@@ -548,7 +548,8 @@ namespace GlassRoom
             var online = NewRect("Online", root, Vector2.zero, Vector2.zero);
             online.pivot = new Vector2(0f, 0f);
             online.sizeDelta = new Vector2(330f, 40f);
-            online.anchoredPosition = new Vector2(10f, 4f);
+            // (In from the corner: phone screens have rounded corners.)
+            online.anchoredPosition = new Vector2(44f, 14f);
             m_Online = AddText(online, "", 27, Color.white, FontStyle.Bold);
             m_Online.alignment = TextAnchor.LowerLeft;
             var outline = m_Online.gameObject.AddComponent<Outline>();

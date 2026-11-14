@@ -77,7 +77,15 @@ namespace GlassRoom
             if (knob != null) knob.anchoredPosition = Vector2.zero;
             // Before Start has run, the rest position isn't known yet.
             if (baseRect != null && m_Zone != null) baseRect.anchoredPosition = m_RestPosition;
-            SetAlpha(0.55f);
+            SetAlpha(RestAlpha);
+        }
+
+        // Not being touched: a faint circle where it is while hints are on, nothing otherwise.
+        static float RestAlpha => HintSettings.Enabled ? 0.55f : 0f;
+
+        void Update()
+        {
+            if (m_PointerId == int.MinValue) SetAlpha(RestAlpha);
         }
 
         void SetAlpha(float a)
