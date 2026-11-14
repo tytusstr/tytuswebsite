@@ -98,6 +98,41 @@
   <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
   <div id="nameEdit"><div class="col"><input id="editInput" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
+    // Phones (Safari) can refuse to restart the sound when you come back to the page
+    // ("Failed to start the audio device"). That's not fatal: keep the game running and
+    // try the sound again on the next touch or when the page is shown again.
+    (function () {
+      var contexts = [];
+      ["AudioContext", "webkitAudioContext"].forEach(function (name) {
+        var Original = window[name];
+        if (!Original) return;
+        var Tracked = function () {
+          var ctx = new (Function.prototype.bind.apply(Original, [null].concat([].slice.call(arguments))))();
+          contexts.push(ctx);
+          return ctx;
+        };
+        Tracked.prototype = Original.prototype;
+        window[name] = Tracked;
+      });
+      function resumeAll() {
+        contexts.forEach(function (ctx) {
+          if (ctx.state === "running" || ctx.state === "closed") return;
+          try { var r = ctx.resume(); if (r && r.catch) r.catch(function () {}); } catch (e) {}
+        });
+      }
+      ["touchend", "click", "keydown"].forEach(function (t) { window.addEventListener(t, resumeAll, true); });
+      document.addEventListener("visibilitychange", function () { if (!document.hidden) setTimeout(resumeAll, 300); });
+      function isAudioError(x) {
+        var text = String((x && (x.message || x.reason && x.reason.message || x.reason)) || x || "");
+        return /audio device|AudioContext|InvalidStateError/i.test(text) && /audio/i.test(text);
+      }
+      function swallow(e) {
+        if (isAudioError(e) || isAudioError(e.error)) { e.preventDefault(); e.stopImmediatePropagation(); resumeAll(); }
+      }
+      window.addEventListener("error", swallow, true);
+      window.addEventListener("unhandledrejection", swallow, true);
+    })();
+
     // Browsers refuse to capture the mouse pointer until the player has clicked. The game asks
     // again on the first click, so a refusal is harmless; catch it here so Safari doesn't show
     // it as an error box when the page opens.
@@ -119,7 +154,7 @@
     var config = {
       arguments: [],
       dataUrl: "Build/728d66cb722ccef441e9d2e2ccc45b6b.data.unityweb",
-      frameworkUrl: "Build/56f7078c9285aadf346095146de761e0.framework.js.unityweb",
+      frameworkUrl: "Build/c51e6e4623dc7b5fea0dc1d6281de6f4.framework.js.unityweb",
       codeUrl: "Build/c6828fa7ca6323d10fad342e39cea5fc.wasm.unityweb",
       streamingAssetsUrl: "StreamingAssets",
       companyName: "DefaultCompany",

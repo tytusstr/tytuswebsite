@@ -35,7 +35,7 @@ mergeInto(LibraryManager.library, {
       var unlock = function () {
         m.graph();
         if (!m.wantPlay) return;
-        if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
+        if (m.ctx && m.ctx.state !== "running") { try { var r = m.ctx.resume(); if (r && r.catch) r.catch(function () {}); } catch (e) {} }
         if (m.wantPlay && m.el.paused && !m.ended) {
           var p = m.el.play();
           if (p && p.then) p.then(function () { m.fadeTo(m.volume, 0.08); }, function () {});
@@ -52,7 +52,7 @@ mergeInto(LibraryManager.library, {
       m.gain.gain.cancelScheduledValues(0);
       m.gain.gain.value = 0;
     }
-    if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
+    if (m.ctx && m.ctx.state !== "running") { try { var r = m.ctx.resume(); if (r && r.catch) r.catch(function () {}); } catch (e) {} }
     m.pendingSeek = null;
     m.el.src = url;
     var p = m.el.play();
@@ -85,7 +85,7 @@ mergeInto(LibraryManager.library, {
       m.gain.gain.cancelScheduledValues(0);
       m.gain.gain.value = 0;
     }
-    if (m.ctx && m.ctx.state !== "running") m.ctx.resume();
+    if (m.ctx && m.ctx.state !== "running") { try { var r = m.ctx.resume(); if (r && r.catch) r.catch(function () {}); } catch (e) {} }
     // Silent until the song is truly playing again, then a gentle fade up, so the restart
     // itself can never be heard.
     var fadeIn = function () {
