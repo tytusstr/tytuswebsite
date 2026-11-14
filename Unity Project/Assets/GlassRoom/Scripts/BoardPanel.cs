@@ -32,7 +32,8 @@ namespace GlassRoom
         Text m_Preview, m_ConfirmLabel, m_WriteTab, m_DrawTab;
         Image m_WriteTabBg, m_DrawTabBg;
         InputField m_Input;
-        GameObject m_WriteControls, m_DrawControls, m_EraseButton, m_UndoButton, m_DrawSurface;
+        GameObject m_WriteControls, m_DrawControls, m_EraseButton, m_UndoButton, m_DrawSurface, m_ConfirmButton;
+        Text m_FullNote;
         readonly List<Image> m_ColorDots = new List<Image>(), m_SizeDots = new List<Image>();
         readonly List<StrokeGraphic> m_Lines = new List<StrokeGraphic>();
         Font m_Font;
@@ -175,6 +176,9 @@ namespace GlassRoom
             confirm.bg.color = k_Light;
             confirm.label.color = k_Dark;
             m_ConfirmLabel = confirm.label;
+            m_ConfirmButton = confirm.bg.gameObject;
+            m_FullNote = Label(Rect(m_Card, "Full Note", new Vector2(0.5f, 0.5f), new Vector2(900f, 44f), new Vector2(0f, bottom + 58f)),
+                "The board is full (" + MarkerBoard.MaxEntries + "). Erase it to write or draw more.", 24, new Color(1f, 0.8f, 0.5f));
 
             SetColor(0);
             SetSize(1);
@@ -191,6 +195,10 @@ namespace GlassRoom
             m_Input.text = "";
             ClearLines();
             m_EraseButton.SetActive(board.HasContent);
+            // Full: wipe it first.
+            bool full = board.Full;
+            m_FullNote.gameObject.SetActive(full);
+            m_ConfirmButton.SetActive(!full);
             m_Root.SetActive(true);
             m_Root.transform.SetAsLastSibling();
             SetMode(false);

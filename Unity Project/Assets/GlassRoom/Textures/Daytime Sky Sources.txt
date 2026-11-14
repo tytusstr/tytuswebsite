@@ -1,1 +1,1 @@
-Daytime Sky.jpg: "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal, Poly Haven (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky), CC0 1.0. Tonemapped, resized to 4096 wide.
+Daytime Sky.jpg: "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal, Poly Haven (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky), CC0 1.0. Tonemapped JPG, resized to 8192 wide; used as a cube map (no pinching overhead).

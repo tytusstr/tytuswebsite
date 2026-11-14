@@ -395,12 +395,24 @@ namespace GlassRoom.Editor
         // all round, seen through the skylight's glass.
         static void DaytimeSky()
         {
+            // As a cube map: a panorama photo pinches together straight overhead, which is
+            // exactly what you see through the skylight; a cube map doesn't.
+            string texPath = $"{Root}/Textures/Daytime Sky.jpg";
+            if (AssetImporter.GetAtPath(texPath) is TextureImporter ti &&
+                (ti.textureShape != TextureImporterShape.TextureCube || ti.generateCubemap != TextureImporterGenerateCubemap.Cylindrical || ti.maxTextureSize != 2048))
+            {
+                ti.textureShape = TextureImporterShape.TextureCube;
+                ti.generateCubemap = TextureImporterGenerateCubemap.Cylindrical;
+                ti.maxTextureSize = 2048;
+                ti.mipmapEnabled = true;
+                ti.SaveAndReimport();
+            }
             string path = $"{Root}/Materials/Daytime Sky.mat";
-            var shader = Shader.Find("Skybox/Panoramic");
+            var shader = Shader.Find("Skybox/Cubemap");
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
             mat.shader = shader;
-            mat.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>($"{Root}/Textures/Daytime Sky.jpg"));
+            mat.SetTexture("_Tex", AssetDatabase.LoadAssetAtPath<Cubemap>(texPath));
             mat.SetFloat("_Exposure", 1.15f);
             mat.SetFloat("_Rotation", 40f);
             EditorUtility.SetDirty(mat);
@@ -412,25 +424,9 @@ namespace GlassRoom.Editor
         // along the hall, like the slot.
         static void CloudVideo(Transform root)
         {
-            var shader = Shader.Find("GlassRoom/Sky Video");
-            string path = $"{Root}/Materials/Sky Video.mat";
-            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
-            mat.shader = shader;
-            mat.SetFloat("_Exposure", 1.1f);
-            mat.SetFloat("_EdgeFade", 0.18f);
-            EditorUtility.SetDirty(mat);
-            var go = new GameObject("Sky Video");
-            go.transform.SetParent(root, false);
-            go.transform.localPosition = new Vector3(Width / 2f - GlassWidth / 2f, 75f, 0f);
-            go.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
-            go.transform.localScale = new Vector3(190f, 1f, 107f); // 16:9, like the video
-            go.AddComponent<MeshFilter>().sharedMesh = CircleQuad();
-            var r = go.AddComponent<MeshRenderer>();
-            r.sharedMaterial = mat;
-            r.shadowCastingMode = ShadowCastingMode.Off;
-            r.receiveShadows = false;
-            go.AddComponent<SkyVideo>();
+            // The looping cloud video (which glitched) is gone; the sky photo shows instead.
+            var old = root.Find("Sky Video");
+            if (old != null) Object.DestroyImmediate(old.gameObject);
         }
 
         // A slightly cool, subdued grade like the reference.

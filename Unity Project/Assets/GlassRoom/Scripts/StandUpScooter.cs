@@ -45,8 +45,10 @@ namespace GlassRoom
         [Range(0f, 1f)] public float humVolume = 0.125f;
         public AudioClip stepOnClip;
         public AudioClip stepOffClip;
-        [Tooltip("Running into something fast.")]
+        [Tooltip("Running into something.")]
         public AudioClip crashClip;
+        [Tooltip("Running into something at 80% of top speed or more.")]
+        public AudioClip crashHardClip;
 
         /// <summary>Losing more speed than this (m/s) all at once is a crash.</summary>
         public const float CrashSpeed = 2.5f;
@@ -57,20 +59,46 @@ namespace GlassRoom
         {
             if (crashClip == null || Time.time - m_LastCrash < 0.5f) return;
             m_LastCrash = Time.time;
+            bool hard = speedLost >= maxSpeed * 0.8f && crashHardClip != null;
             float loudness = Mathf.Lerp(0.45f, 1f, Mathf.InverseLerp(CrashSpeed, maxSpeed, speedLost));
             m_Effects.volume = 1f;
             m_Effects.pitch = Random.Range(0.92f, 1.06f);
-            m_Effects.PlayOneShot(crashClip, loudness);
-            if (share) SharedSounds.Raise(SharedSound.ScooterCrash, Multiplayer.ScooterIndex(this), transform.position, loudness);
+            m_Effects.PlayOneShot(hard ? crashHardClip : crashClip, loudness);
+            if (share) SharedSounds.Raise(hard ? SharedSound.ScooterCrashHard : SharedSound.ScooterCrash, Multiplayer.ScooterIndex(this), transform.position, loudness);
         }
 
-        /// <summary>Pushed by another scooter: moved over, and set rolling at this speed.</summary>
-        public void Shove(Vector3 by, float speed)
+        /// <summary>
+        /// Pushed by another scooter: moved over, and set rolling at this speed. False (and not
+        /// moved) if a wall or anything else solid is in the way.
+        /// </summary>
+        public bool Shove(Vector3 by, float speed)
         {
-            transform.position += new Vector3(by.x, 0f, by.z);
+            by.y = 0f;
+            if (Blocked(by)) { m_Speed = 0f; return false; }
+            transform.position += by;
             Vector3 dir = by.sqrMagnitude > 0.000001f ? by.normalized : transform.forward;
             float along = Vector3.Dot(dir, transform.forward) * speed;
             if (Mathf.Abs(along) > Mathf.Abs(m_Speed)) m_Speed = along;
+            return true;
+        }
+
+        // Anything solid (not people, not this scooter) within this move?
+        bool Blocked(Vector3 by)
+        {
+            float length = by.magnitude;
+            if (length < 0.0001f || !(body is BoxCollider box)) return false;
+            Vector3 centre = box.transform.TransformPoint(box.center);
+            Vector3 half = Vector3.Scale(box.size, box.transform.lossyScale) * 0.5f;
+            half.y *= 0.6f;
+            foreach (var hit in Physics.BoxCastAll(centre, half, by / length, transform.rotation, length + 0.03f,
+                         Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.transform.IsChildOf(transform)) continue;
+                if (hit.collider is CharacterController || hit.transform.GetComponentInParent<PlayerAvatar>() != null) continue;
+                if (hit.transform.GetComponentInParent<StandUpScooter>() != null) continue;
+                return true;
+            }
+            return false;
         }
 
         AudioSource m_Motor, m_Effects;
@@ -170,14 +198,14 @@ namespace GlassRoom
             Vector3 local = strip != null ? strip.localPosition : new Vector3(0f, 0.08f, 0.35f);
             var go = new GameObject("Headlight");
             go.transform.SetParent(transform, false);
-            go.transform.localPosition = local + new Vector3(0f, 0.02f, 0.03f);
-            // Tipped down enough to light the floor ahead, not just skim across it.
-            go.transform.localRotation = Quaternion.Euler(14f, 0f, 0f);
+            // Right at the light strip, tipped down so the beam starts at the scooter.
+            go.transform.localPosition = local + new Vector3(0f, 0.01f, -0.01f);
+            go.transform.localRotation = Quaternion.Euler(26f, 0f, 0f);
             m_Headlight = go.AddComponent<Light>();
             m_Headlight.type = LightType.Spot;
             m_Headlight.color = new Color(0.92f, 0.96f, 1f);
-            m_Headlight.spotAngle = 70f;
-            m_Headlight.innerSpotAngle = 35f;
+            m_Headlight.spotAngle = 96f;
+            m_Headlight.innerSpotAngle = 55f;
             m_Headlight.range = 14f;
             m_Headlight.intensity = 0f;
             m_Headlight.shadows = LightShadows.None;
@@ -190,6 +218,39 @@ namespace GlassRoom
                 m_StripBlock = new MaterialPropertyBlock();
             }
             ShowHeadlight();
+            BuildRearLight();
+        }
+
+        // A dim red strip across the back of the deck, lit while someone rides.
+        Renderer m_RearStrip;
+        Light m_RearGlow;
+        static readonly Color k_Red = new Color(1f, 0.08f, 0.05f);
+
+        void BuildRearLight()
+        {
+            var strip = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            strip.name = "Rear Light";
+            Destroy(strip.GetComponent<Collider>());
+            strip.transform.SetParent(transform, false);
+            strip.transform.localPosition = new Vector3(0f, 0.085f, -0.345f);
+            strip.transform.localScale = new Vector3(0.24f, 0.014f, 0.012f);
+            m_RearStrip = strip.GetComponent<Renderer>();
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            mat.SetColor("_BaseColor", new Color(0.25f, 0.02f, 0.02f));
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor("_EmissionColor", Color.black);
+            m_RearStrip.material = mat;
+            m_RearStrip.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var glow = new GameObject("Rear Glow");
+            glow.transform.SetParent(transform, false);
+            glow.transform.localPosition = new Vector3(0f, 0.1f, -0.38f);
+            m_RearGlow = glow.AddComponent<Light>();
+            m_RearGlow.type = LightType.Point;
+            m_RearGlow.color = k_Red;
+            m_RearGlow.range = 1.1f;
+            m_RearGlow.intensity = 0f;
+            m_RearGlow.shadows = LightShadows.None;
+            m_RearGlow.enabled = false;
         }
 
         // Fades the headlight towards on while ridden, off otherwise.
@@ -207,6 +268,12 @@ namespace GlassRoom
             float level = Mathf.SmoothStep(0f, 1f, m_HeadlightLevel);
             m_Headlight.intensity = headlightIntensity * level;
             m_Headlight.enabled = level > 0.001f;
+            if (m_RearStrip != null)
+            {
+                m_RearStrip.material.SetColor("_EmissionColor", k_Red * (1.6f * level));
+                m_RearGlow.intensity = 0.5f * level;
+                m_RearGlow.enabled = level > 0.001f;
+            }
             if (m_HeadlightStrip != null)
             {
                 m_HeadlightStrip.GetPropertyBlock(m_StripBlock);

@@ -17,7 +17,7 @@ namespace GlassRoom
         public string sessionName = "glass-room";
         public int maxPlayers = 100;
         /// <summary>Bump whenever NetworkPlayer's shared data changes.</summary>
-        public const int NetworkVersion = 4;
+        public const int NetworkVersion = 5;
 
         public static Multiplayer Instance { get; private set; }
         /// <summary>Everyone in the room, you included.</summary>
@@ -87,7 +87,7 @@ namespace GlassRoom
             if (m_Gone) return;
             if (AnyInput()) m_LastInput = Time.unscaledTime;
             if (m_Ready && Time.unscaledTime - m_LastInput > IdleLimit)
-                Leave("You were away for 5 minutes, so you've left the room.");
+                Leave("You were away for 10 minutes, so you've left the room.");
             else if (m_JoinedAt >= 0f && m_Runner != null && !m_Runner.IsRunning && !m_Connecting)
                 Leave("You've been disconnected.");
         }
@@ -95,7 +95,7 @@ namespace GlassRoom
         bool m_Connecting;
         bool m_Gone;
         float m_LastInput;
-        const float IdleLimit = 300f;
+        const float IdleLimit = 600f;
 
         // Any key, mouse movement or click, or touch counts as playing.
         static bool AnyInput()
@@ -226,6 +226,7 @@ namespace GlassRoom
             else if (a[0] == "radio" && radio != null) radio.TogglePlayPause();
             else if (a[0] == "skip" && radio != null) radio.Skip();
             else if (a[0] == "tp" && me != null) me.Teleport(new Vector3(float.Parse(a[1], inv), 0.05f, float.Parse(a[2], inv)), float.Parse(a[3], inv));
+            else if (a[0] == "hit" && me != null) me.TakeHit(Quaternion.Euler(0f, float.Parse(a[1], inv), 0f) * Vector3.forward, float.Parse(a[2], inv));
             else if (me != null) me.TestAct(a[0]);
             Dump();
         }

@@ -102,9 +102,9 @@ namespace GlassRoom.Editor
             foreach (var seat in Object.FindObjectsByType<Seat>(FindObjectsInactive.Include))
             {
                 // A little smaller than imported (they were oversized for a person).
-                seat.transform.localScale = Vector3.one * 88f;
+                seat.transform.localScale = Vector3.one * 80f;
                 seat.WorkOutFacing();
-                seat.recline = 24f;
+                seat.recline = 30f;
                 // The chair's real shape, not a shrink-wrapped lid over it, so you can stand in the seat.
                 foreach (var c in seat.GetComponentsInChildren<MeshCollider>()) { c.convex = false; EditorUtility.SetDirty(c); }
                 EditorUtility.SetDirty(seat);
@@ -117,7 +117,8 @@ namespace GlassRoom.Editor
                 // The saved scene keeps its old value otherwise.
                 scooter.humVolume = 0.125f;
                 scooter.maxSpeed = 7.8f;
-                scooter.crashClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/GlassRoom/Audio/Scooter/Scooter Crash.wav");
+                scooter.crashClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/GlassRoom/Audio/Scooter/Scooter Bump.wav");
+                scooter.crashHardClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/GlassRoom/Audio/Scooter/Scooter Crash Hard.wav");
                 scooter.acceleration = 4.3f;
                 scooter.headlightIntensity = 14f; // bright enough to show on the dark floor
                 EditorUtility.SetDirty(scooter);

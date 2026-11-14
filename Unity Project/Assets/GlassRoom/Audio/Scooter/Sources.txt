@@ -1,3 +1,4 @@
 Electric Hum.ogg: "loop_machine_01" from "50 CC0 Sci-Fi SFX" by rubberduck (opengameart.org/content/50-cc0-sci-fi-sfx), CC0 public domain.
 impactSoft_*.ogg: Kenney Impact Sounds (kenney.nl), CC0 public domain.
-Scooter Crash.wav: "bike_drop1" by NeoSpica, https://freesound.org/s/419116/ (CC0 1.0), normalised.
+Scooter Bump.wav: "SPRTSkate_Drop-skateboard-ground-concrete_01" by nico-audio, https://freesound.org/s/717547/ (CC0 1.0), first 0.6 s, normalised.
+Scooter Crash Hard.wav: "Bike_Wreck.wav" by 1sticky8, https://freesound.org/s/78483/ (CC0 1.0), 0.12-1.75 s, normalised.

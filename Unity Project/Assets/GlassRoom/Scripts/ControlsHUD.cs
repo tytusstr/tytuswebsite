@@ -84,6 +84,7 @@ namespace GlassRoom
         Slider m_FovSlider;
         const float CardWidth = 1180f, CardHeight = 760f;
         Text m_CharacterValue, m_NameStatus, m_HelpText, m_Online;
+        GameObject m_TurnHint;
         InputField m_NameField;
         GameObject[] m_Pages;
         Image[] m_TabBgs;
@@ -142,6 +143,7 @@ namespace GlassRoom
                 m_FrameRate.text = Mathf.RoundToInt(1f / m_SmoothedFrameTime) + " fps";
                 ShowCharacter();
                 FitCard();
+                if (m_TurnHint.activeSelf != HintSettings.Enabled) m_TurnHint.SetActive(HintSettings.Enabled);
             }
             FitSafeArea();
             // How many people are here, snug in the top-right corner.
@@ -568,6 +570,7 @@ namespace GlassRoom
             var picture = NewRect("Picture", stage, Vector2.zero, Vector2.one);
             CharacterPreview.Create(picture);
             var turnHint = AddText(NewRect("Hint", stage, new Vector2(0f, 0f), new Vector2(1f, 0f)), "Drag to turn", 20, k_Muted);
+            m_TurnHint = turnHint.gameObject;
             turnHint.rectTransform.sizeDelta = new Vector2(0f, 40f);
             turnHint.rectTransform.anchoredPosition = new Vector2(0f, 26f);
             var pick = NewRect("Character Row", card, new Vector2(0f, 1f), new Vector2(0f, 1f));

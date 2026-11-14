@@ -89,6 +89,13 @@ namespace GlassRoom
                 m_Avatar = library.Spawn(index, null);
                 m_Avatar.name = "Preview Person";
                 m_Avatar.SetLayer(m_Layer);
+                // Down here there's none of the hall's stored lighting; only the studio's lights.
+                foreach (var r in m_Avatar.GetComponentsInChildren<Renderer>())
+                {
+                    r.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+                    r.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                }
                 m_Shown = index;
             }
             m_Avatar.Move(Vector2.zero);

@@ -94,6 +94,7 @@ namespace GlassRoom
             var seat = m_Player.CurrentSeat;
             PlayerAvatar.Placement(transform.position, m_Player.BodyYaw, seat, m_Player.CurrentRide, out var feet, out var yaw);
             m_Avatar.Move(m_Player.LocalMotion);
+            m_Avatar.Knock(m_Player.Lying, m_Player.DownBackwards, m_Player.KnockCount);
             m_Avatar.Pose(feet, yaw, m_Player.GroundSpeed, seat != null, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             m_Avatar.Look(m_Player.HeadYaw, m_Player.HeadPitch);
             m_Avatar.Hold(m_Player.CurrentRide);

@@ -15,6 +15,8 @@ namespace GlassRoom
     {
         static readonly int k_Speed = Animator.StringToHash("Speed");
         static readonly int k_Seated = Animator.StringToHash("Seated");
+        static readonly int k_MoveX = Animator.StringToHash("MoveX");
+        static readonly int k_MoveZ = Animator.StringToHash("MoveZ");
 
         // The sitting animation has the hips this high above the feet; the seat cushion is a
         // little below the hip bone.
@@ -87,10 +89,43 @@ namespace GlassRoom
             }
             else transform.SetPositionAndRotation(feet, Quaternion.Euler(0f, yaw, 0f));
             if (m_Animator == null) return;
-            // Walking backwards plays the walk in reverse (negative speed in the animations).
-            bool backwards = m_Motion.y < -0.1f && -m_Motion.y > Mathf.Abs(m_Motion.x) * 0.6f;
-            m_Animator.SetFloat(k_Speed, backwards ? -speed : speed, 0.12f, Mathf.Max(dt, 0.0001f));
+            // How they're moving relative to their body picks the walk: forwards, backwards
+            // (the walk in reverse), sideways (sidesteps), or in between.
+            float damp = Mathf.Max(dt, 0.0001f);
+            m_Animator.SetFloat(k_Speed, speed, 0.12f, damp);
+            m_Animator.SetFloat(k_MoveX, m_Motion.x, 0.12f, damp);
+            m_Animator.SetFloat(k_MoveZ, m_Motion.y, 0.12f, damp);
             m_Animator.SetBool(k_Seated, seated);
+        }
+
+        static readonly int k_Down = Animator.StringToHash("Down");
+        static readonly int k_Backwards = Animator.StringToHash("Backwards");
+        static readonly int k_Fall = Animator.StringToHash("Fall");
+        int m_KnocksShown = -1;
+        bool m_IsDown;
+
+        /// <summary>Knocked over by a scooter: down now or not, which way, and how many times so far.</summary>
+        public void Knock(bool down, bool backwards, int count)
+        {
+            m_IsDown = down;
+            if (m_Animator == null) return;
+            bool first = m_KnocksShown < 0;
+            if (count != m_KnocksShown)
+            {
+                m_KnocksShown = count;
+                if (!first && down && HasParameter(k_Fall))
+                {
+                    m_Animator.SetBool(k_Backwards, backwards);
+                    m_Animator.SetTrigger(k_Fall);
+                }
+            }
+            if (HasParameter(k_Down)) m_Animator.SetBool(k_Down, down);
+        }
+
+        bool HasParameter(int hash)
+        {
+            foreach (var p in m_Animator.parameters) if (p.nameHash == hash) return true;
+            return false;
         }
 
         /// <summary>How they're moving relative to their body: x sideways (right +), y forward (m/s).</summary>
@@ -129,8 +164,9 @@ namespace GlassRoom
             float k = 1f - Mathf.Exp(-14f * Time.deltaTime);
             m_HeadYaw = Mathf.Lerp(m_HeadYaw, m_TargetHeadYaw, k);
             m_HeadPitch = Mathf.Lerp(m_HeadPitch, m_TargetHeadPitch, k);
-            TwistHips();
-            TurnHead();
+            // Not while falling over or getting up (those move the head themselves).
+            var state = m_Animator != null ? m_Animator.GetCurrentAnimatorStateInfo(0) : default;
+            if (m_Animator == null || state.IsName("Move") || state.IsName("Seated")) TurnHead();
             if (m_Ride != null) HoldGrips(m_Ride);
             UseTool();
         }
@@ -283,7 +319,7 @@ namespace GlassRoom
             if (upper == null || fore == null || hand == null) return;
             Vector3 forward = scooter.transform.forward;
             Vector3 arm = (grip - upper.position).normalized;
-            Vector3 wrist = grip - arm * 0.07f + Vector3.up * 0.03f;
+            Vector3 wrist = grip - arm * 0.065f + Vector3.up * 0.012f;
             Reach(upper, fore, hand, wrist, -forward * 0.3f + Vector3.down * 0.3f + scooter.transform.right * side * 0.06f);
 
             // Straight on from the forearm, dipping slightly onto the bar.

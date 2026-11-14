@@ -251,6 +251,7 @@ namespace GlassRoom
             }
             else
             {
+                if (Down) { UpdateDown(look, Time.deltaTime); UpdatePrompts(); return; }
                 ApplyLook(look);
                 // Writing or drawing on the board: you stay where you are until it's up.
                 if (!MarkerBoard.LocalBusy)
@@ -304,8 +305,14 @@ namespace GlassRoom
         /// <summary>How far you're looking down (positive) or up (negative), in degrees.</summary>
         public float HeadPitch => m_Pitch;
 
+        // Looking around turns only your head; once it's turned more than this far, the body
+        // turns to catch up. Walking, the body turns towards where you're going (a little).
+        const float HeadOnlyLimit = 40f;
+        bool m_BodyCatchingUp;
+
         void UpdateBodyYaw(float dt)
         {
+            bool moving = false;
             float target = m_Yaw;
             if (m_Ride == null && m_Seat == null && m_Controller.enabled)
             {
@@ -313,16 +320,30 @@ namespace GlassRoom
                 v.y = 0f;
                 if (v.magnitude > 0.3f)
                 {
-                    float moving = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
-                    float delta = Mathf.DeltaAngle(m_Yaw, moving);
+                    moving = true;
+                    float heading = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
+                    float delta = Mathf.DeltaAngle(m_Yaw, heading);
                     // Walking backwards the body faces forward, turned towards the side stepped to.
-                    if (Mathf.Abs(delta) > 90f) delta = Mathf.DeltaAngle(m_Yaw, moving + 180f);
+                    if (Mathf.Abs(delta) > 90f) delta = Mathf.DeltaAngle(m_Yaw, heading + 180f);
                     target = m_Yaw + Mathf.Clamp(delta, -BodyTurnLimit, BodyTurnLimit);
                 }
             }
-            m_BodyYaw = Mathf.MoveTowardsAngle(m_BodyYaw, target, 120f * dt);
-            // Never further than the limit from the head, however fast you turn.
-            m_BodyYaw = m_Yaw + Mathf.Clamp(Mathf.DeltaAngle(m_Yaw, m_BodyYaw), -BodyTurnLimit, BodyTurnLimit);
+            if (moving)
+            {
+                m_BodyCatchingUp = false;
+                m_BodyYaw = Mathf.MoveTowardsAngle(m_BodyYaw, target, 300f * dt);
+            }
+            else
+            {
+                if (Mathf.Abs(Mathf.DeltaAngle(m_BodyYaw, m_Yaw)) > HeadOnlyLimit) m_BodyCatchingUp = true;
+                if (m_BodyCatchingUp)
+                {
+                    m_BodyYaw = Mathf.MoveTowardsAngle(m_BodyYaw, m_Yaw, 220f * dt);
+                    if (Mathf.Abs(Mathf.DeltaAngle(m_BodyYaw, m_Yaw)) < 2f) m_BodyCatchingUp = false;
+                }
+            }
+            // However fast you turn, the head never ends up more than a quarter turn from the body.
+            m_BodyYaw = m_Yaw + Mathf.Clamp(Mathf.DeltaAngle(m_Yaw, m_BodyYaw), -90f, 90f);
         }
 
         /// <summary>Testing only (see Multiplayer.TestWalk): held joystick input.</summary>
@@ -840,6 +861,7 @@ namespace GlassRoom
             IgnoreScooters(true);
             m_Controller.Move(m_Velocity * dt);
             ShoveScooters(scooter, dt);
+            HitPeople(scooter);
 
             // Bumping into something stops the scooter instead of grinding against it; hitting it
             // fast makes a crash.
@@ -889,8 +911,127 @@ namespace GlassRoom
                 float closing = Vector3.Dot(m_Controller.velocity, dir);
                 if (closing <= 0.05f) continue;
                 if (other.RemoteControlled) { other.TakeBackControl(); Multiplayer.ClaimScooter(other); }
-                other.Shove(dir * (gap - distance), closing * 0.8f);
-                if (closing > StandUpScooter.CrashSpeed) mine.Crash(closing * 0.6f);
+                if (!other.Shove(dir * (gap - distance), closing * 0.8f))
+                {
+                    // It's against a wall: you stop instead of pushing it through.
+                    m_Controller.Move(-dir * (gap - distance));
+                    if (Mathf.Abs(m_RideSpeed) > StandUpScooter.CrashSpeed) mine.Crash(Mathf.Abs(m_RideSpeed));
+                    m_RideSpeed = 0f;
+                }
+                else if (closing > StandUpScooter.CrashSpeed) mine.Crash(closing * 0.6f);
+            }
+        }
+
+        // ---------- Hitting people ----------
+
+        /// <summary>Speed (m/s) above which being hit by a scooter knocks you over.</summary>
+        public const float KnockSpeed = 2.2f;
+        readonly System.Collections.Generic.Dictionary<NetworkPlayer, float> m_LastHit = new System.Collections.Generic.Dictionary<NetworkPlayer, float>();
+
+        // Riding into someone: they're hit (on their own screen straight away; what you see is
+        // what counts). Someone else on a scooter is shoved, more gently.
+        void HitPeople(StandUpScooter mine)
+        {
+            float speed = Mathf.Abs(m_RideSpeed);
+            if (speed < 0.4f || Multiplayer.Local == null) return;
+            Vector3 me = mine.transform.position;
+            Vector3 heading = mine.transform.forward * Mathf.Sign(m_RideSpeed);
+            foreach (var p in Multiplayer.Players)
+            {
+                if (p == null || p.IsLocal || p.Seated || p.Object == null || !p.Object.IsValid) continue;
+                Vector3 them = p.Riding && Multiplayer.ScooterAt(p.RideIndex) != null ? Multiplayer.ScooterAt(p.RideIndex).transform.position : p.transform.position;
+                Vector3 apart = them - me;
+                apart.y = 0f;
+                float reach = mine.footprintRadius + (p.Riding ? 0.38f : 0.28f);
+                if (apart.magnitude > reach) continue;
+                Vector3 dir = apart.magnitude > 0.01f ? apart.normalized : heading;
+                if (Vector3.Dot(heading, dir) < 0.1f) continue; // only what's in front of you
+                if (m_LastHit.TryGetValue(p, out float last) && Time.time - last < 0.7f) continue;
+                m_LastHit[p] = Time.time;
+                Vector3 push = (dir + heading).normalized;
+                Multiplayer.Local.Hit(p, push, p.Riding ? speed * 0.5f : speed);
+                if (speed > StandUpScooter.CrashSpeed) mine.Crash(speed);
+                m_RideSpeed *= p.Riding ? 0.6f : 0.55f;
+            }
+        }
+
+        /// <summary>
+        /// You've been hit by someone's scooter going this fast. Walking: a shove, or above
+        /// <see cref="KnockSpeed"/> you're knocked over and get back up. Riding: your scooter is pushed.
+        /// </summary>
+        public void TakeHit(Vector3 dir, float speed)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return;
+            dir.Normalize();
+            Debug.Log($"Hit by a scooter at {speed:F1} m/s" + (speed >= KnockSpeed && m_Seat == null && m_Ride == null ? ": knocked over" : ""));
+            if (m_Seat != null) return;
+            if (m_Ride != null)
+            {
+                m_Controller.Move(dir * Mathf.Min(0.4f, speed * 0.08f));
+                m_RideSpeed += Vector3.Dot(dir, transform.forward) * speed * 0.6f;
+                m_Ride.Crash(speed);
+                return;
+            }
+            if (speed < KnockSpeed)
+            {
+                Vector3 kick = dir * speed * 0.8f;
+                m_Velocity = new Vector3(kick.x, m_Velocity.y, kick.z);
+                return;
+            }
+            // Knocked over: backwards if hit from the front, onto your front if from behind.
+            m_DownBackwards = Vector3.Dot(dir, transform.forward) < 0f;
+            float t = Mathf.InverseLerp(KnockSpeed, 8f, speed);
+            m_DownFor = Mathf.Lerp(3.2f, 4.6f, t);
+            m_DownTime = 0f;
+            m_Knock = dir * speed * Mathf.Lerp(0.7f, 1.1f, t);
+            m_DownYaw = m_Yaw;
+            KnockCount++;
+        }
+
+        /// <summary>True while you're lying on the ground (before getting up).</summary>
+        public bool Lying => m_DownTime < m_DownFor - GetUpTime;
+
+        /// <summary>True while you're on the ground or getting up.</summary>
+        public bool Down => m_DownTime < m_DownFor;
+        /// <summary>Fell onto your back (else onto your front).</summary>
+        public bool DownBackwards => m_DownBackwards;
+        /// <summary>Goes up by one each time you're knocked over.</summary>
+        public int KnockCount { get; private set; }
+        public const float GetUpTime = 2.2f;
+
+        float m_DownTime = 10f, m_DownFor;
+        bool m_DownBackwards;
+        Vector3 m_Knock;
+        float m_DownYaw;
+
+        // On the ground: you slide to a stop, can only look around a little, then get up; the
+        // view drops to the floor and comes back up.
+        void UpdateDown(Vector2 look, float dt)
+        {
+            m_DownTime += dt;
+            m_Knock = Vector3.MoveTowards(m_Knock, Vector3.zero, 6f * dt);
+            float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
+            m_Velocity = new Vector3(m_Knock.x, vertical, m_Knock.z);
+            m_Controller.Move(m_Velocity * dt);
+
+            m_Yaw = m_DownYaw + Mathf.Clamp(Mathf.DeltaAngle(m_DownYaw, m_Yaw + look.x), -35f, 35f);
+            transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
+            m_BodyYaw = m_DownYaw;
+
+            // 0 falling, 1 lying; then getting up in the last GetUpTime seconds.
+            float fall = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(m_DownTime / 0.45f));
+            float rise = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((m_DownTime - (m_DownFor - GetUpTime)) / GetUpTime));
+            float down = fall * (1f - rise);
+            float lying = m_DownBackwards ? -55f : 50f;
+            m_Pitch = Mathf.Clamp(m_Pitch - look.y, -25f, 25f);
+            float roll = Mathf.Sin(down * Mathf.PI) * (m_DownBackwards ? 8f : -8f);
+            cameraPivot.localRotation = Quaternion.Euler(m_Pitch * (1f - down) + (lying + m_Pitch * 0.3f) * down, 0f, roll);
+            cameraPivot.localPosition = new Vector3(0f, Mathf.Lerp(m_EyeHeight, 0.32f, down), Mathf.Lerp(0f, m_DownBackwards ? -0.6f : 0.6f, down));
+            if (!Down)
+            {
+                cameraPivot.localPosition = new Vector3(0f, m_EyeHeight, 0f);
+                cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
             }
         }
 
@@ -902,7 +1043,7 @@ namespace GlassRoom
             Vector3 me = transform.position;
             foreach (var scooter in Multiplayer.Scooters)
             {
-                if (scooter == null || Mathf.Abs(scooter.Speed) < 0.3f) continue;
+                if (scooter == null || Mathf.Abs(scooter.Speed) < 0.3f || Multiplayer.ScooterRiddenByOther(scooter)) continue;
                 Vector3 apart = me - scooter.transform.position;
                 apart.y = 0f;
                 float gap = scooter.footprintRadius + m_Controller.radius;
@@ -986,7 +1127,7 @@ namespace GlassRoom
                                 && target == null && m_Seat == null && m_Ride == null;
                 if (tutorial)
                     m_Hud.SetTutorial(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade),
-                        ("Space", "to jump"), ("W", "double tap to sprint"));
+                        ("Space", "to jump"), ("W W", "double tap W (or hold Shift) to sprint"));
                 else m_Hud.SetTutorial(0f);
                 return;
             }
@@ -1009,7 +1150,7 @@ namespace GlassRoom
             else if (near is Seat seat)
                 m_Hud.SetContextButtons(("Sit", () => SitDown(seat)));
             else if (near is MarkerBoard nearBoard && nearBoard.InFront(transform.position) && !MarkerBoard.LocalBusy)
-                m_Hud.SetContextButtons(("Board", () => BoardPanel.Instance.Open()));
+                m_Hud.SetContextButtons(("Write/Draw", () => BoardPanel.Instance.Open()));
             else if (near is MusicSpeaker speaker)
             {
                 if (speaker.IsOn) m_Hud.SetContextButtons(("Play / Pause", speaker.TogglePlayPause), ("Skip", speaker.Skip));
@@ -1051,7 +1192,9 @@ namespace GlassRoom
 
                 Vector3 centre = Centre(thing);
                 Vector3 view = m_Camera.WorldToViewportPoint(centre);
-                if (view.z <= 0f || view.x < 0f || view.x > 1f || view.y < 0f || view.y > 1f) continue;
+                // Right up against the board its middle can be off screen; being in front of it is enough.
+                bool boardInFront = thing is MarkerBoard nearBoard && nearBoard.InFront(transform.position);
+                if (!boardInFront && (view.z <= 0f || view.x < 0f || view.x > 1f || view.y < 0f || view.y > 1f)) continue;
 
                 float distance = Vector3.Distance(transform.position, centre);
                 if (distance < bestDistance) { bestDistance = distance; best = thing; }

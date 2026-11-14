@@ -52,7 +52,7 @@ namespace GlassRoom
         [Tooltip("Height of the cushion's top where you sit, in metres (set by Apply Updates from the chair's shape).")]
         public float cushionHeight = 0.47f;
         [Tooltip("How far the sitter leans back into the chair, in degrees.")]
-        public float recline = 24f;
+        public float recline = 30f;
 
         /// <summary>Editor: works out <see cref="facing"/> and <see cref="cushionHeight"/> from the chair's shape.</summary>
         public void WorkOutFacing()
@@ -115,7 +115,7 @@ namespace GlassRoom
         public Vector3 SitPoint => FloorPoint - Facing * 0.04f;
 
         /// <summary>Where the sitter's hips are, in the seat.</summary>
-        public Vector3 HipPoint => SitPoint + Facing * 0.08f + Vector3.up * (cushionHeight + 0.1f);
+        public Vector3 HipPoint => SitPoint + Facing * 0.13f + Vector3.up * (cushionHeight + 0.05f);
 
         public void PlaySitSound()
         {

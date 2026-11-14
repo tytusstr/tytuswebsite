@@ -46,6 +46,7 @@ namespace GlassRoom
             public int color, size;
             public StrokeGraphic stroke;
             public int strokeId;
+            public string key;
             public bool complete;
             public readonly List<Vector2> letters = new List<Vector2>();
             // The text with its line breaks fixed where the finished text wraps, so words don't
@@ -62,6 +63,8 @@ namespace GlassRoom
         }
 
         readonly List<Item> m_Items = new List<Item>();
+        // Entries on the board by their key, and those that came from the saved board.
+        readonly HashSet<string> m_Keys = new HashSet<string>(), m_Loaded = new HashSet<string>();
         readonly List<Job> m_Jobs = new List<Job>();
         RenderTexture m_Texture;
         Camera m_Camera;
@@ -99,6 +102,27 @@ namespace GlassRoom
 
         /// <summary>True if there's anything on the board.</summary>
         public bool HasContent => m_Items.Count > 0;
+
+        /// <summary>How many writings and drawings the board holds before it has to be wiped.</summary>
+        public const int MaxEntries = 30;
+
+        /// <summary>Writings and drawings on the board (a drawing counts once, however many lines).</summary>
+        public int Entries
+        {
+            get
+            {
+                int n = 0;
+                var drawings = new HashSet<string>();
+                foreach (var item in m_Items)
+                {
+                    if (item.isText) n++;
+                    else drawings.Add(item.key ?? (item.author + ":" + item.strokeId));
+                }
+                return n + drawings.Count;
+            }
+        }
+
+        public bool Full => Entries >= MaxEntries;
         public RenderTexture Picture => m_Texture;
         public Font Font => m_Font;
         /// <summary>Which way the board faces (into the room).</summary>
@@ -120,19 +144,24 @@ namespace GlassRoom
         {
             m_Layer = LayerMask.NameToLayer("Board");
             if (m_Layer < 0) m_Layer = 30;
-            m_Texture = new RenderTexture(1024, 512, 16, RenderTextureFormat.ARGB32) { name = "Marker Board", antiAliasing = 2 };
+            // With smaller copies for seeing it from far away, so it doesn't shimmer.
+            m_Texture = new RenderTexture(1024, 512, 16, RenderTextureFormat.ARGB32)
+            {
+                name = "Marker Board", antiAliasing = 2, useMipMap = true, autoGenerateMips = true,
+                filterMode = FilterMode.Trilinear, anisoLevel = 4,
+            };
             if (surface != null)
             {
                 var material = surface.material;
                 material.SetTexture("_BaseMap", m_Texture);
                 material.mainTexture = m_Texture;
-                // Lit a little from within, so it reads as a white board even in the dim corner.
-                material.EnableKeyword("_EMISSION");
-                material.SetTexture("_EmissionMap", m_Texture);
-                material.SetColor("_EmissionColor", new Color(0.55f, 0.55f, 0.55f));
-                material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+                // A plain white board with just a faint sheen (no glow).
+                material.DisableKeyword("_EMISSION");
+                material.SetFloat("_Smoothness", 0.38f);
+                material.SetFloat("_Metallic", 0f);
             }
             BuildStage();
+            StartCoroutine(Load());
             m_Sound = gameObject.AddComponent<AudioSource>();
             m_Sound.playOnAwake = false;
             m_Sound.loop = true;
@@ -204,7 +233,7 @@ namespace GlassRoom
         {
             Vector3 local = transform.InverseTransformPoint(feet);
             float outFront = -local.z;
-            return outFront > 0.2f && outFront < 1.9f && Mathf.Abs(local.x) < width * 0.5f + 0.3f;
+            return outFront > -0.05f && outFront < 1.9f && Mathf.Abs(local.x) < width * 0.5f + 0.3f;
         }
 
         // ---- Text: size that fits its box, the same everywhere ----
@@ -236,9 +265,10 @@ namespace GlassRoom
         // ---- Adding things (from the network, or straight away when playing alone) ----
 
         /// <summary>Text in a box (board units), in one of the colours.</summary>
-        public void AddText(int author, string s, Rect box, int color, bool animate)
+        public void AddText(int author, string s, Rect box, int color, bool animate, string key = null)
         {
             if (string.IsNullOrWhiteSpace(s)) return;
+            if (key != null && !m_Keys.Add(key)) return; // already on the board
             color = Mathf.Clamp(color, 0, Colors.Length - 1);
             var rect = NewRect("Text", m_Content);
             rect.anchorMin = rect.anchorMax = Vector2.zero;
@@ -251,7 +281,7 @@ namespace GlassRoom
             int fontSize = FitSize(text, s, box.size);
             text.resizeTextForBestFit = false;
             text.fontSize = fontSize;
-            var item = new Item { author = author, isText = true, text = text, full = s, color = color, complete = true };
+            var item = new Item { author = author, isText = true, text = text, full = s, color = color, complete = true, key = key };
             // Where each letter sits (for the writer's hand), and the finished text's line breaks.
             var gen = new TextGenerator();
             gen.Populate(s, text.GetGenerationSettings(box.size));
@@ -275,13 +305,16 @@ namespace GlassRoom
         }
 
         /// <summary>Part of a drawn line (lines arrive in pieces); it's drawn once the last piece is in.</summary>
-        public void AddStroke(int author, int strokeId, int color, int size, string packed, bool last, bool animate)
+        public void AddStroke(int author, int strokeId, int color, int size, string packed, bool last, bool animate, string key = null)
         {
             Item item = null;
             foreach (var existing in m_Items)
                 if (!existing.isText && existing.author == author && existing.strokeId == strokeId && !existing.complete) { item = existing; break; }
             if (item == null)
             {
+                // A drawing already on the board (loaded from the saved board) isn't added twice.
+                if (key != null && m_Loaded.Contains(key)) return;
+                if (key != null) m_Keys.Add(key);
                 var rect = NewRect("Line", m_Content);
                 rect.anchorMin = rect.anchorMax = Vector2.zero;
                 rect.pivot = Vector2.zero;
@@ -290,7 +323,7 @@ namespace GlassRoom
                 stroke.raycastTarget = false;
                 item = new Item
                 {
-                    author = author, isText = false, stroke = stroke, strokeId = strokeId,
+                    author = author, isText = false, stroke = stroke, strokeId = strokeId, key = key,
                     color = Mathf.Clamp(color, 0, Colors.Length - 1), size = Mathf.Clamp(size, 0, Sizes.Length - 1),
                 };
                 stroke.color = Colors[item.color];
@@ -323,6 +356,8 @@ namespace GlassRoom
             foreach (var item in m_Items)
                 Destroy(item.isText ? item.text.gameObject : item.stroke.gameObject);
             m_Items.Clear();
+            m_Keys.Clear();
+            m_Loaded.Clear();
             m_Wipe.rectTransform.sizeDelta = new Vector2(0f, UnitsHigh);
             m_Dirty = true;
         }
@@ -433,48 +468,146 @@ namespace GlassRoom
             me.HoldAt(feet, Quaternion.LookRotation(-Facing).eulerAngles.y);
         }
 
+        // ---- Kept online (Firebase), so the board stays after everyone has left ----
+
+        const string Database = "https://tytuswebsite-board-default-rtdb.firebaseio.com";
+
+        // Keys sort in the order things were put up.
+        static string NewKey()
+        {
+            const string letters = "abcdefghijklmnopqrstuvwxyz0123456789";
+            var sb = new System.Text.StringBuilder("e");
+            sb.Append(System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString("D13"));
+            for (int i = 0; i < 5; i++) sb.Append(letters[Random.Range(0, letters.Length)]);
+            return sb.ToString();
+        }
+
+        static string N(float v) => Mathf.RoundToInt(v).ToString();
+
+        static string Quote(string s)
+        {
+            var sb = new System.Text.StringBuilder("\"");
+            foreach (char ch in s)
+            {
+                if (ch == '"' || ch == '\\') sb.Append('\\').Append(ch);
+                else if (ch < ' ') sb.Append("\\u").Append(((int)ch).ToString("x4"));
+                else sb.Append(ch);
+            }
+            return sb.Append('"').ToString();
+        }
+
+        System.Collections.IEnumerator Save(string key, string json) => Send("PUT", Database + "/board/entries/" + key + ".json", json);
+
+        static System.Collections.IEnumerator Send(string method, string url, string json)
+        {
+            var request = new UnityEngine.Networking.UnityWebRequest(url, method);
+            if (json != null)
+            {
+                request.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(json));
+                request.SetRequestHeader("Content-Type", "application/json");
+            }
+            request.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
+            yield return request.SendWebRequest();
+            if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                Debug.LogWarning("Board: couldn't save (" + request.error + ")");
+            request.Dispose();
+        }
+
+        // What's on the saved board, shown straight away (no writing animation).
+        System.Collections.IEnumerator Load()
+        {
+            var request = UnityEngine.Networking.UnityWebRequest.Get(Database + "/board/entries.json");
+            yield return request.SendWebRequest();
+            string body = request.result == UnityEngine.Networking.UnityWebRequest.Result.Success ? request.downloadHandler.text : null;
+            request.Dispose();
+            if (string.IsNullOrEmpty(body) || body == "null") yield break;
+            var entries = MiniJson.Parse(body) as Dictionary<string, object>;
+            if (entries == null) yield break;
+            var keys = new List<string>(entries.Keys);
+            keys.Sort(System.StringComparer.Ordinal);
+            int id = -1000000;
+            foreach (var key in keys)
+            {
+                if (!(entries[key] is Dictionary<string, object> e) || m_Keys.Contains(key)) continue;
+                string kind = e.TryGetValue("k", out var k) ? k as string : null;
+                int color = e.TryGetValue("c", out var c) ? System.Convert.ToInt32(c) : 0;
+                if (kind == "t" && e.TryGetValue("t", out var t))
+                {
+                    var box = new Rect(Num(e, "x"), Num(e, "y"), Num(e, "w"), Num(e, "h"));
+                    AddText(-3, t as string, box, color, false, key);
+                }
+                else if (kind == "d" && e.TryGetValue("d", out var d) && d is string lines)
+                {
+                    int size = e.TryGetValue("s", out var z) ? System.Convert.ToInt32(z) : 1;
+                    m_Loaded.Add(key);
+                    foreach (var line in lines.Split('|'))
+                    {
+                        // Added as a finished line under this drawing's key.
+                        m_Loaded.Remove(key);
+                        AddStroke(-3, ++id, color, size, line, true, false, key);
+                        m_Loaded.Add(key);
+                    }
+                }
+            }
+        }
+
+        static float Num(Dictionary<string, object> e, string name) => e.TryGetValue(name, out var v) ? System.Convert.ToSingle(v) : 0f;
+
         // ---- Your requests (sent to everyone; played here straight away when you're alone) ----
 
-        public static event System.Action<string, Rect, int> TextRequested;
-        public static event System.Action<int, int, int, string, bool> StrokeRequested;
+        public static event System.Action<string, Rect, int, string> TextRequested;
+        public static event System.Action<int, int, int, string, bool, string> StrokeRequested;
         public static event System.Action EraseRequested;
 
-        int m_NextStroke;
+        int m_NextBatch;
 
         public void Write(string s, Rect box, int color)
         {
             s = s.Trim();
-            if (s.Length == 0) return;
+            if (s.Length == 0 || Full) return;
             if (s.Length > 120) s = s.Substring(0, 120);
-            if (TextRequested != null) TextRequested(s, box, color);
-            else AddText(LocalAuthor, s, box, color, true);
+            string key = NewKey();
+            if (TextRequested != null) TextRequested(s, box, color, key);
+            else AddText(LocalAuthor, s, box, color, true, key);
+            StartCoroutine(Save(key, "{\"k\":\"t\",\"x\":" + N(box.x) + ",\"y\":" + N(box.y) + ",\"w\":" + N(box.width) + ",\"h\":" + N(box.height)
+                                     + ",\"c\":" + color + ",\"t\":" + Quote(s) + "}"));
         }
 
         public void Draw(List<List<Vector2>> lines, int color, int size)
         {
+            if (Full) return;
             int budget = 2000;
+            // One drawing: one key for all its lines (one entry), each line its own id.
+            string key = NewKey();
+            int batch = ++m_NextBatch;
+            int lineNumber = 0;
+            var saved = new List<string>();
             foreach (var line in lines)
             {
                 if (line.Count == 0 || budget <= 0) continue;
                 int count = Mathf.Min(line.Count, budget);
                 budget -= count;
-                int id = ++m_NextStroke;
+                int id = (batch << 12) | (++lineNumber & 4095);
                 // A few dozen points per message, so each stays small.
                 for (int from = 0; from < count; from += 40)
                 {
                     int n = Mathf.Min(40, count - from);
                     string packed = StrokeGraphic.Pack(line, from, n);
                     bool last = from + n >= count;
-                    if (StrokeRequested != null) StrokeRequested(id, color, size, packed, last);
-                    else AddStroke(LocalAuthor, id, color, size, packed, last, true);
+                    if (StrokeRequested != null) StrokeRequested(id, color, size, packed, last, key);
+                    else AddStroke(LocalAuthor, id, color, size, packed, last, true, key);
                 }
+                saved.Add(StrokeGraphic.Pack(line, 0, count));
             }
+            if (saved.Count > 0)
+                StartCoroutine(Save(key, "{\"k\":\"d\",\"c\":" + color + ",\"s\":" + size + ",\"d\":" + Quote(string.Join("|", saved)) + "}"));
         }
 
         public void EraseAll()
         {
             if (EraseRequested != null) EraseRequested();
             else Erase(LocalAuthor, true);
+            StartCoroutine(Send("DELETE", Database + "/board/entries.json", null));
         }
     }
 }

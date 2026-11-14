@@ -21,6 +21,10 @@ namespace GlassRoom
         /// <summary>Movement relative to their body (x sideways, y forward), for sidesteps and walking backwards.</summary>
         [Networked] public Vector2 Motion { get; set; }
         [Networked] public NetworkBool Airborne { get; set; }
+        /// <summary>Knocked over by a scooter: how many times so far, whether they're down now, and which way they fell.</summary>
+        [Networked] public int Knocks { get; set; }
+        [Networked] public NetworkBool IsDown { get; set; }
+        [Networked] public NetworkBool FellBackwards { get; set; }
         [Networked] public float Speed { get; set; }
         [Networked] public NetworkBool Seated { get; set; }
         [Networked] public int SeatIndex { get; set; }
@@ -89,6 +93,8 @@ namespace GlassRoom
                 m_Steps.minDistance = 1.5f;
                 m_Steps.maxDistance = 30f;
                 m_Steps.rolloffMode = AudioRolloffMode.Logarithmic;
+                // Someone arriving while you're here: a notice in the chat, once their name is in.
+                if (Multiplayer.RoomReady) StartCoroutine(AnnounceJoin());
                 // Someone new: if you've been here longest, pass on the prints already made.
                 var me = Multiplayer.Local;
                 if (me != null && me != this && PlayerId > me.PlayerId && me == Multiplayer.Oldest())
@@ -128,6 +134,9 @@ namespace GlassRoom
             Speed = m_Me.GroundSpeed;
             Motion = m_Me.LocalMotion;
             Airborne = m_Me.Airborne;
+            Knocks = m_Me.KnockCount;
+            IsDown = m_Me.Lying;
+            FellBackwards = m_Me.DownBackwards;
             Seated = m_Me.CurrentSeat != null;
             SeatIndex = Seated ? Multiplayer.SeatIndex(m_Me.CurrentSeat) : -1;
             Riding = m_Me.CurrentRide != null;
@@ -227,20 +236,20 @@ namespace GlassRoom
         // ---- The marker board: what you put on it, sent to everyone (you included) ----
 
         bool Mine => Object != null && Object.IsValid && HasStateAuthority;
-        void OnBoardText(string s, Rect box, int color) { if (Mine) RPC_BoardText(s, new Vector4(box.x, box.y, box.width, box.height), (byte)color); }
-        void OnBoardStroke(int id, int color, int size, string packed, bool last) { if (Mine) RPC_BoardStroke(id, (byte)color, (byte)size, packed, last); }
+        void OnBoardText(string s, Rect box, int color, string key) { if (Mine) RPC_BoardText(s, new Vector4(box.x, box.y, box.width, box.height), (byte)color, key); }
+        void OnBoardStroke(int id, int color, int size, string packed, bool last, string key) { if (Mine) RPC_BoardStroke(id, (byte)color, (byte)size, packed, last, key); }
         void OnBoardErase() { if (Mine) RPC_BoardErase(); }
 
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-        void RPC_BoardText(string s, Vector4 box, byte color)
+        void RPC_BoardText(string s, Vector4 box, byte color, string key)
         {
-            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddText(PlayerId, s, new Rect(box.x, box.y, box.z, box.w), color, true);
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddText(PlayerId, s, new Rect(box.x, box.y, box.z, box.w), color, true, key);
         }
 
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-        void RPC_BoardStroke(int id, byte color, byte size, string packed, NetworkBool last)
+        void RPC_BoardStroke(int id, byte color, byte size, string packed, NetworkBool last, string key)
         {
-            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddStroke(PlayerId, id, color, size, packed, last, true);
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddStroke(PlayerId, id, color, size, packed, last, true, key);
         }
 
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
@@ -291,6 +300,48 @@ namespace GlassRoom
             }
         }
 
+        IEnumerator AnnounceJoin()
+        {
+            float until = Time.unscaledTime + 1.5f;
+            while (Time.unscaledTime < until && PlayerName.Length == 0) yield return null;
+            if (ChatBox.Instance != null) ChatBox.Instance.Joined(PlayerName.ToString());
+        }
+
+        // Someone new: what's been said so far.
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_ChatFor([RpcTarget] PlayerRef player, string name, string message, NetworkBool system)
+        {
+            if (ChatBox.Instance != null) ChatBox.Instance.AddOld(name, message, system);
+        }
+
+        IEnumerator SendChatTo(PlayerRef player)
+        {
+            if (ChatBox.Instance == null) yield break;
+            var messages = new System.Collections.Generic.List<ChatBox.Message>(ChatBox.Instance.History);
+            int sent = 0;
+            foreach (var m in messages)
+            {
+                if (Object == null || !Object.IsValid) yield break;
+                RPC_ChatFor(player, m.name ?? "", m.text, m.system);
+                if (++sent % 10 == 0) yield return null;
+            }
+        }
+
+        // ---- Scooter hits ----
+
+        /// <summary>You ran into this player on your scooter (sent to them only).</summary>
+        public void Hit(NetworkPlayer target, Vector3 dir, float speed)
+        {
+            if (Mine && target != null && target.Object != null) RPC_Hit(target.Object.StateAuthority, dir, speed);
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_Hit([RpcTarget] PlayerRef player, Vector3 dir, float speed)
+        {
+            var me = FindAnyObjectByType<FirstPersonController>();
+            if (me != null) me.TakeHit(dir, speed);
+        }
+
         // Chat: your message to everyone (you included, so it shows in your own chat too).
         void OnChat(string message)
         {
@@ -321,7 +372,8 @@ namespace GlassRoom
                 RPC_MarkFor(player, m.tyre, m.at, m.yaw, m.size, m.strength, m.mirror);
                 if (++sent % 12 == 0) yield return null;
             }
-            yield return SendBoardTo(player);
+            // (The board they load themselves, from where it's kept online.)
+            yield return SendChatTo(player);
         }
 
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
@@ -361,6 +413,8 @@ namespace GlassRoom
                 body.radius = 0.25f;
                 m_Body = body;
                 m_AvatarShown = AvatarIndex;
+                // Looking where they're looking from the first frame.
+                m_Avatar.Look(HeadYaw, HeadPitch, true);
             }
 
             // On a scooter they stand exactly on the deck wherever it's shown, holding its
@@ -371,6 +425,7 @@ namespace GlassRoom
             float yaw = transform.eulerAngles.y;
             if (ride != null || seat != null) PlayerAvatar.Placement(feet, yaw, seat, ride, out feet, out yaw);
             m_Avatar.Move(Motion);
+            m_Avatar.Knock(IsDown, FellBackwards, Knocks);
             m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             // While you ride, people don't block you (your scooter pushes them on their side);
             // walking, you bump into them.
