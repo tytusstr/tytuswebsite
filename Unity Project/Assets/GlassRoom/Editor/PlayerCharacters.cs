@@ -168,7 +168,7 @@ namespace GlassRoom.Editor
             {
                 // Back: the recording staggers first, so it starts where the fall begins; getting up
                 // is left before the arms swing back at the end.
-                Knockdown(sm, move, "Back", fallBack, 0.36f, upBack, 0f, 1f, 0.55f, true);
+                Knockdown(sm, move, "Back", fallBack, 0.405f, upBack, 0f, 1f, 0.55f, true);
                 Knockdown(sm, move, "Front", fallFront, 0.05f, upFront, 0.42f, 2.3f, 0.86f, false);
             }
             EditorUtility.SetDirty(controller);
@@ -180,7 +180,8 @@ namespace GlassRoom.Editor
         {
             var falling = sm.AddState("Fall " + side);
             falling.motion = fall;
-            falling.cycleOffset = fallStart; // (the recording starts in a boxer's stance)
+            falling.cycleOffset = fallStart; // (the recording starts in a boxer's stance: skipped)
+            falling.speed = backwards ? 1.25f : 1f;
             var hit = sm.AddAnyStateTransition(falling);
             hit.AddCondition(AnimatorConditionMode.If, 0f, "Fall");
             hit.AddCondition(backwards ? AnimatorConditionMode.If : AnimatorConditionMode.IfNot, 0f, "Backwards");

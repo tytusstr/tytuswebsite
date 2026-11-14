@@ -15,6 +15,8 @@ namespace GlassRoom
         public static BloodTracks Instance { get; private set; }
 
         public AudioClip[] squelchClips;
+        [Tooltip("A wheel rolling through blood (instead of the squelch of a step).")]
+        public AudioClip wheelClip;
         [Range(0f, 1f)] public float squelchVolume = 0.8f;
         [Tooltip("A transparent material the prints and tracks are drawn with.")]
         public Material printMaterial;
@@ -45,6 +47,7 @@ namespace GlassRoom
         void Start()
         {
             m_Source = gameObject.AddComponent<AudioSource>();
+            SoundSettings.Tag(m_Source, SoundKind.Blood);
             m_Source.playOnAwake = false;
             m_Source.spatialBlend = 0f;
             m_Block = new MaterialPropertyBlock();
@@ -93,11 +96,16 @@ namespace GlassRoom
         /// <summary>Another player's squelch, heard from where they are.</summary>
         public void SquelchAt(Vector3 position, float loudness)
         {
+            // (Negative: a wheel, not a step.)
+            bool wheel = loudness < 0f;
+            loudness = Mathf.Abs(loudness);
             if (squelchClips == null || squelchClips.Length == 0) return;
-            var clip = squelchClips[Random.Range(0, squelchClips.Length)];
+            var clip = wheel && wheelClip != null ? wheelClip : squelchClips[Random.Range(0, squelchClips.Length)];
             var go = new GameObject("Squelch");
             go.transform.position = position;
             var a = go.AddComponent<AudioSource>();
+            SoundSettings.Tag(a, SoundKind.Blood);
+            a.mute = !SoundSettings.Enabled(SoundKind.Blood);
             a.spatialBlend = 1f;
             a.minDistance = 2f;
             a.maxDistance = 25f;
@@ -169,8 +177,8 @@ namespace GlassRoom
                 m_TyreBlood = 1f;
                 if (Time.time >= m_NextRollSquelch)
                 {
-                    Squelch(0.75f);
-                    m_NextRollSquelch = Time.time + 0.32f;
+                    Wheel(0.8f);
+                    m_NextRollSquelch = Time.time + 0.55f;
                 }
             }
             if (m_TyreBlood <= 0.02f || m_TyreMat == null) return;
@@ -185,6 +193,37 @@ namespace GlassRoom
                 m_TyreBlood -= 0.022f;
                 if (m_TyreBlood <= 0.02f) break;
             }
+        }
+
+        // A wheel through blood: a wet splash, not a step. (Shared as a negative loudness.)
+        void Wheel(float loudness)
+        {
+            if (wheelClip == null) { Squelch(loudness); return; }
+            m_Source.pitch = Random.Range(0.9f, 1.1f);
+            m_Source.PlayOneShot(wheelClip, squelchVolume * loudness);
+            Squelched?.Invoke(transform.position, -loudness);
+        }
+
+        /// <summary>Jumping: pushing off in blood squelches (and soaks your shoes).</summary>
+        public void Jump(Vector3 feet)
+        {
+            if (!InBlood(feet)) return;
+            m_ShoeBlood = 1f;
+            Squelch(0.9f);
+        }
+
+        /// <summary>Landing from a jump: both feet come down, so two prints (and a squelch in blood).</summary>
+        public void Land(Vector3 feet, float yaw)
+        {
+            if (InBlood(feet)) { m_ShoeBlood = 1f; Squelch(1f); }
+            if (m_ShoeBlood <= 0.02f || m_FootMat == null) return;
+            var rotation = Quaternion.Euler(0f, yaw, 0f);
+            foreach (bool left in new[] { true, false })
+            {
+                Vector3 at = feet + rotation * new Vector3(left ? -0.12f : 0.12f, 0f, 0f);
+                PlaceMark(m_FootMat, at, rotation * Quaternion.Euler(0f, left ? -6f : 6f, 0f), new Vector3(0.12f, 1f, 0.29f), m_ShoeBlood, left);
+            }
+            m_ShoeBlood -= 0.15f;
         }
 
         void Squelch(float loudness)

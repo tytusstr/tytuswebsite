@@ -24,6 +24,8 @@ namespace GlassRoom
         /// <summary>Knocked over by a scooter: how many times so far, whether they're down now, and which way they fell.</summary>
         [Networked] public int Knocks { get; set; }
         [Networked] public NetworkBool IsDown { get; set; }
+        /// <summary>Goes up twice a second while their game is running (a page out of sight stops it).</summary>
+        [Networked] public int Beat { get; set; }
         [Networked] public NetworkBool FellBackwards { get; set; }
         [Networked] public float Speed { get; set; }
         [Networked] public NetworkBool Seated { get; set; }
@@ -145,6 +147,15 @@ namespace GlassRoom
             Airborne = m_Me.Airborne;
             Knocks = m_Me.KnockCount;
             IsDown = m_Me.Lying;
+            if (Time.unscaledTime >= m_NextBeat) { m_NextBeat = Time.unscaledTime + 0.5f; Beat++; }
+            // Lying limp: where every part is, for everyone (often while it moves, now and then
+            // while still, so anyone arriving sees it too).
+            string limp = m_Me.LimpPose(out bool limpMoving);
+            if (limp != null && Time.unscaledTime >= m_NextLimp)
+            {
+                m_NextLimp = Time.unscaledTime + (limpMoving ? 0.1f : 1.5f);
+                RPC_Limp(limp);
+            }
             FellBackwards = m_Me.DownBackwards;
             Seated = m_Me.CurrentSeat != null;
             SeatIndex = Seated ? Multiplayer.SeatIndex(m_Me.CurrentSeat) : -1;
@@ -215,6 +226,18 @@ namespace GlassRoom
         }
 
         // Your prints, tracks, squelches and other sounds, sent to everyone else.
+        float m_NextBeat, m_NextLimp, m_BeatSeenAt;
+        int m_BeatSeen = -1;
+
+        /// <summary>True when their game seems to have stopped (page out of sight): no heartbeat lately.</summary>
+        public bool Stale => !HasStateAuthority && Time.unscaledTime - m_BeatSeenAt > 2f && m_BeatSeen >= 0;
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
+        void RPC_Limp(string packed)
+        {
+            if (m_Avatar != null && IsDown) m_Avatar.Ragdoll.Follow(packed, false);
+        }
+
         // ---- The body on the floor: where it is, blood it splashes on walls, its thuds ----
 
         void OnBodyPose(string packed) { if (Mine) RPC_BodyPose(packed); }
@@ -452,6 +475,8 @@ namespace GlassRoom
                 m_Avatar = library.Spawn(AvatarIndex, null);
                 if (m_Avatar == null) return;
                 m_Avatar.name = "Player " + PlayerId;
+                // Already in a chair: straight into sitting (no standing for a moment).
+                if (Seated) m_Avatar.SnapSeated();
                 // You bump into other people rather than walking through them.
                 var body = m_Avatar.gameObject.AddComponent<CapsuleCollider>();
                 body.center = new Vector3(0f, 0.85f, 0f);
@@ -475,7 +500,11 @@ namespace GlassRoom
             m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             // While you ride, people don't block you (your scooter pushes them on their side);
             // walking, you bump into them.
-            if (m_Body != null) m_Body.enabled = m_Me == null || m_Me.CurrentRide == null;
+            // Someone whose game has stopped (their page is out of sight) can't move out of the
+            // way themselves, so then you bump into them even riding. Lying limp, their body
+            // itself is what you bump into.
+            if (Beat != m_BeatSeen) { m_BeatSeen = Beat; m_BeatSeenAt = Time.unscaledTime; }
+            if (m_Body != null) m_Body.enabled = !IsDown && (m_Me == null || m_Me.CurrentRide == null || Stale);
             m_Avatar.Look(HeadYaw, HeadPitch);
             m_Avatar.Hold(ride);
             var board = MarkerBoard.Instance;

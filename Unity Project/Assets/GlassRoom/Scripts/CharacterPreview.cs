@@ -52,6 +52,10 @@ namespace GlassRoom
             m_Camera.targetTexture = m_Texture;
             m_Camera.enabled = false;
 
+            // Only the studio's own lights reach the person here: the hall's lights (the sun and
+            // its shadows above all) leave this layer alone.
+            foreach (var light in FindObjectsByType<Light>(FindObjectsInactive.Include))
+                light.cullingMask &= ~(1 << m_Layer);
             m_Key = NewLight(rig.transform, new Vector3(1.6f, 2.4f, 2.6f), 6f);
             m_Fill = NewLight(rig.transform, new Vector3(-2.2f, 1.4f, 1.4f), 2.6f);
         }
@@ -95,6 +99,8 @@ namespace GlassRoom
                     r.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
                     r.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
                     r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    // (The hall's sun shadows don't belong down here: they darkened the top half.)
+                    r.receiveShadows = false;
                 }
                 m_Shown = index;
             }

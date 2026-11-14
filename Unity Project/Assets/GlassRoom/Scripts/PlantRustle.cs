@@ -31,6 +31,7 @@ namespace GlassRoom
         {
             m_Controller = GetComponent<CharacterController>();
             m_Source = gameObject.AddComponent<AudioSource>();
+            SoundSettings.Tag(m_Source, SoundKind.Room);
             m_Source.playOnAwake = false;
             m_Source.spatialBlend = 0f;
             FindPlants();

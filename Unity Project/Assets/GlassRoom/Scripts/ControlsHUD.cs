@@ -52,6 +52,34 @@ namespace GlassRoom
             if (!visible) SetSprint(false);
         }
 
+        // Sprint stamina: a thin bar in the bottom-right corner, under the buttons, shown while
+        // it isn't full.
+        RectTransform m_StaminaFill;
+        CanvasGroup m_StaminaGroup;
+
+        public void SetStamina(float level)
+        {
+            if (m_StaminaFill == null)
+            {
+                var bar = NewRect("Stamina", m_SafeArea, new Vector2(1f, 0f), new Vector2(1f, 0f));
+                bar.pivot = new Vector2(1f, 0f);
+                bar.sizeDelta = new Vector2(240f, 12f);
+                bar.anchoredPosition = new Vector2(-40f, 22f);
+                AddImage(bar.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.55f), UISprites.RoundedPanel, false, 6f);
+                m_StaminaFill = NewRect("Fill", bar, Vector2.zero, Vector2.one);
+                m_StaminaFill.offsetMin = new Vector2(2f, 2f);
+                m_StaminaFill.offsetMax = new Vector2(-2f, -2f);
+                AddImage(m_StaminaFill.gameObject, Color.white, UISprites.RoundedPanel, false, 4f);
+                m_StaminaGroup = bar.gameObject.AddComponent<CanvasGroup>();
+                m_StaminaGroup.blocksRaycasts = false;
+            }
+            level = Mathf.Clamp01(level);
+            m_StaminaFill.anchorMax = new Vector2(Mathf.Max(0.02f, level), 1f);
+            m_StaminaFill.GetComponent<Image>().color = level < 0.25f ? new Color(1f, 0.45f, 0.4f) : Color.white;
+            float target = level < 0.999f && !IsMenuOpen ? 1f : 0f;
+            m_StaminaGroup.alpha = Mathf.MoveTowards(m_StaminaGroup.alpha, target, Time.unscaledDeltaTime * 3f);
+        }
+
         /// <summary>Shows or hides the phone Jump button (hidden while riding); the other buttons drop into its place.</summary>
         /// <summary>Shows or hides the movement joystick (hidden while seated).</summary>
         public void SetJoystickVisible(bool visible)
@@ -305,7 +333,7 @@ namespace GlassRoom
         public void OpenHelp()
         {
             SetMenuOpen(true);
-            ShowTab(3);
+            ShowTab(4);
         }
         public void ToggleMenu()
         {
@@ -519,9 +547,9 @@ namespace GlassRoom
             // The number of people here, small and snug in the bottom-left corner.
             var online = NewRect("Online", root, Vector2.zero, Vector2.zero);
             online.pivot = new Vector2(0f, 0f);
-            online.sizeDelta = new Vector2(220f, 26f);
+            online.sizeDelta = new Vector2(330f, 40f);
             online.anchoredPosition = new Vector2(10f, 4f);
-            m_Online = AddText(online, "", 18, Color.white, FontStyle.Bold);
+            m_Online = AddText(online, "", 27, Color.white, FontStyle.Bold);
             m_Online.alignment = TextAnchor.LowerLeft;
             var outline = m_Online.gameObject.AddComponent<Outline>();
             outline.effectColor = new Color(0f, 0f, 0f, 0.55f);
@@ -560,8 +588,10 @@ namespace GlassRoom
             title.alignment = TextAnchor.UpperLeft;
             m_FrameRate = Corner(card, "", 20, k_Muted, new Vector2(-30f, -36f));
             m_FrameRate.alignment = TextAnchor.UpperRight;
-            m_FrameRate.rectTransform.anchorMin = m_FrameRate.rectTransform.anchorMax = new Vector2(1f, 1f);
-            m_FrameRate.rectTransform.pivot = new Vector2(1f, 1f);
+            // (The box the text fills sits in the top-right corner.)
+            var fpsBox = (RectTransform)m_FrameRate.rectTransform.parent;
+            fpsBox.anchorMin = fpsBox.anchorMax = fpsBox.pivot = new Vector2(1f, 1f);
+            fpsBox.anchoredPosition = new Vector2(-30f, -36f);
 
             // Left: you, turnable, with arrows to change who you are.
             var stage = NewRect("Character", card, new Vector2(0f, 1f), new Vector2(0f, 1f));
@@ -584,7 +614,7 @@ namespace GlassRoom
             SmallButton(pick, ">", new Vector2(0f, 0f), () => ChangeCharacter(1), new Vector2(1f, 0.5f));
 
             // Right: tabs and their pages.
-            string[] tabs = { "Controls", "Display", "Player", "Help" };
+            string[] tabs = { "Controls", "Display", "Player", "Sounds", "Help" };
             m_Pages = new GameObject[tabs.Length];
             m_TabBgs = new Image[tabs.Length];
             m_TabTexts = new Text[tabs.Length];
@@ -593,8 +623,8 @@ namespace GlassRoom
                 int index = i;
                 var tab = NewRect(tabs[i] + " Tab", card, new Vector2(0f, 1f), new Vector2(0f, 1f));
                 tab.pivot = new Vector2(0f, 1f);
-                tab.anchoredPosition = new Vector2(400f + i * 186f, -96f);
-                tab.sizeDelta = new Vector2(176f, 60f);
+                tab.anchoredPosition = new Vector2(400f + i * 150f, -96f);
+                tab.sizeDelta = new Vector2(142f, 60f);
                 m_TabBgs[i] = AddImage(tab.gameObject, k_Idle, UISprites.RoundedPanel, true, 10f);
                 var b = tab.gameObject.AddComponent<Button>();
                 b.targetGraphic = m_TabBgs[i];
@@ -610,7 +640,8 @@ namespace GlassRoom
             BuildControlsPage((RectTransform)m_Pages[0].transform);
             BuildDisplayPage((RectTransform)m_Pages[1].transform);
             BuildPlayerPage((RectTransform)m_Pages[2].transform);
-            BuildHelpPage((RectTransform)m_Pages[3].transform);
+            BuildSoundsPage((RectTransform)m_Pages[3].transform);
+            BuildHelpPage((RectTransform)m_Pages[4].transform);
             ShowTab(0);
 
             // Computer, with hints on: a small reminder beside the title.
@@ -667,7 +698,7 @@ namespace GlassRoom
             (m_LowButtonBg, m_LowButtonText) = AddChoice(page, "Low", new Vector2(128f, -85f), () => SetGraphics(true));
             ShowGraphics(GraphicsQuality.Low);
             AddSwitch(page, -200f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on);
-            AddSwitch(page, -275f, "Names above heads", () => NameSettings.Enabled, on => NameSettings.Enabled = on);
+            AddSwitch(page, -275f, "Names", () => NameSettings.Enabled, on => NameSettings.Enabled = on);
             AddSwitch(page, -350f, "Chat", () => ChatSettings.Enabled, on => ChatSettings.Enabled = on);
         }
 
@@ -719,6 +750,20 @@ namespace GlassRoom
             m_NameField.text = name;
             m_NameStatus.text = name.Length > 0 ? "Saved" : "Name removed";
             if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        // Each kind of sound on or off, in two columns.
+        void BuildSoundsPage(RectTransform page)
+        {
+            Label(page, "Sounds", 24, k_Muted, -10f);
+            var kinds = SoundSettings.Kinds;
+            for (int i = 0; i < kinds.Length; i++)
+            {
+                var kind = kinds[i].kind;
+                float x = i % 2 == 0 ? -190f : 190f;
+                float y = -85f - (i / 2) * 80f;
+                AddSwitch(page, y, kinds[i].label, () => SoundSettings.Enabled(kind), on => SoundSettings.SetEnabled(kind, on), x, 340f);
+            }
         }
 
         void BuildHelpPage(RectTransform page)

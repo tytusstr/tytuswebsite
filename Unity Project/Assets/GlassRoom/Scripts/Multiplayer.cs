@@ -17,7 +17,7 @@ namespace GlassRoom
         public string sessionName = "glass-room";
         public int maxPlayers = 100;
         /// <summary>Bump whenever NetworkPlayer's shared data changes.</summary>
-        public const int NetworkVersion = 6;
+        public const int NetworkVersion = 7;
 
         public static Multiplayer Instance { get; private set; }
         /// <summary>Everyone in the room, you included.</summary>

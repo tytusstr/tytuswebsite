@@ -21,6 +21,8 @@ namespace GlassRoom
         public AudioClip dragClip, hitClip, splatClip;
         public AudioClip[] thudClips;
         public Material smearMaterial, poolMaterial, wallMaterial;
+        [Tooltip("Blood shapes left on the floor as it's moved (picked at random).")]
+        public Material[] stainMaterials;
 
         /// <summary>Where every part is now (packed), to send to everyone.</summary>
         public static event System.Action<string> PoseShared;
@@ -106,10 +108,10 @@ namespace GlassRoom
             heading.y = 0f;
             heading.Normalize();
             // Hard hits lift it a little off the floor, too.
-            Vector3 impulse = (heading + Vector3.up * Mathf.Lerp(0.05f, 0.35f, speed / 8f)) * speed * 9f;
+            Vector3 impulse = (heading + Vector3.up * Mathf.Lerp(0.05f, 0.35f, speed / 8f)) * speed * 13.5f;
             Push(point, impulse, true);
             // The rest of the body is carried along too, so it slides rather than only folding.
-            foreach (var rb in m_Bodies) rb.AddForce(heading * speed * 0.55f, ForceMode.VelocityChange);
+            foreach (var rb in m_Bodies) rb.AddForce(heading * speed * 0.8f, ForceMode.VelocityChange);
             Sound(speed > 4.5f ? 1 : 0, point, Mathf.Clamp01(speed / 6f), true);
         }
 
@@ -192,6 +194,7 @@ namespace GlassRoom
             var pelvis = m_Bodies[0].transform;
             Vector3 moved = Floor(pelvis.position) - Floor(m_LastPelvis);
             float speed = Time.deltaTime > 0f ? moved.magnitude / Time.deltaTime : 0f;
+            GrowPool(speed < 0.05f && (!m_Simulating || m_Quiet > 0.5f), Time.deltaTime);
             m_LastPelvis = pelvis.position;
             bool onFloor = pelvis.position.y < 0.45f;
             float target = onFloor && dragClip != null ? Mathf.Clamp01((speed - 0.08f) / 1.2f) * 0.9f : 0f;
@@ -205,7 +208,7 @@ namespace GlassRoom
                 if (at.y > 0.45f) { m_SmearFrom[part] = Floor(at); continue; }
                 Vector3 from = m_SmearFrom[part];
                 Vector3 step = Floor(at) - from;
-                if (step.magnitude < 0.3f) continue;
+                if (step.magnitude < m_NextGap) continue;
                 Smear(from + step * 0.5f, step);
                 m_SmearFrom[part] = Floor(at);
             }
@@ -213,15 +216,61 @@ namespace GlassRoom
 
         // ---- Blood ----
 
+        // Uneven blobs of blood where it's dragged: random shapes, sizes and turns, a little off
+        // the line, at uneven spacing (never neat like tyre tracks).
+        float m_NextGap = 0.35f;
+
         void Smear(Vector3 centre, Vector3 along)
         {
-            var mat = smearMaterial != null ? smearMaterial : poolMaterial;
+            var mats = stainMaterials != null && stainMaterials.Length > 0 ? stainMaterials : new[] { poolMaterial != null ? poolMaterial : smearMaterial };
+            var mat = mats[Random.Range(0, mats.Length)];
             if (mat == null) return;
-            float yaw = Mathf.Atan2(along.x, along.z) * Mathf.Rad2Deg + Random.Range(-12f, 12f);
-            float length = Mathf.Clamp(along.magnitude * 1.4f, 0.45f, 1.1f);
-            Stain("Drag Smear", mat, centre + Vector3.up * (0.0045f + 0.00002f * (m_StainOrder % 40)),
-                Quaternion.Euler(0f, yaw + 90f, 0f), new Vector3(length, 1f, Random.Range(0.4f, 0.6f)));
-            if (BloodTracks.Instance != null) BloodTracks.Instance.AddPool(centre, 0.22f);
+            Vector3 dir = along.sqrMagnitude > 0.0001f ? along.normalized : Vector3.forward;
+            Vector3 side = Vector3.Cross(Vector3.up, dir);
+            Vector3 at = centre + side * Random.Range(-0.15f, 0.15f) + dir * Random.Range(-0.1f, 0.1f);
+            float size = Random.Range(0.3f, 0.75f);
+            Stain("Drag Stain", mat, at + Vector3.up * (0.0045f + 0.00002f * (m_StainOrder % 40)),
+                Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), new Vector3(size * Random.Range(0.75f, 1.3f), 1f, size));
+            if (BloodTracks.Instance != null) BloodTracks.Instance.AddPool(at, size * 0.35f);
+            m_NextGap = Random.Range(0.22f, 0.6f);
+        }
+
+        // Lying still (after being moved), blood slowly pools under it: one pool that keeps
+        // growing, very gradually, up to about 1.3 times the body's length across.
+        Renderer m_Pool;
+        Vector3 m_PoolAt;
+        float m_PoolAge, m_PoolRegistered;
+        const float PoolMax = 2.3f;
+
+        void GrowPool(bool still, float dt)
+        {
+            Vector3 centre = (Floor(m_Smearing[0].worldCenterOfMass) + Floor(m_Smearing[1].worldCenterOfMass)) * 0.5f;
+            // Moved away from it: that pool stays as it is; a new one starts where it stops.
+            if (m_Pool != null && (centre - m_PoolAt).magnitude > 0.35f) m_Pool = null;
+            if (!still || !m_EverMoved) return;
+            if (m_Pool == null)
+            {
+                var mat = poolMaterial != null ? poolMaterial : smearMaterial;
+                if (mat == null) return;
+                var go = new GameObject("Growing Pool");
+                go.AddComponent<MeshFilter>().sharedMesh = m_Quad;
+                m_Pool = go.AddComponent<MeshRenderer>();
+                m_Pool.sharedMaterial = mat;
+                m_Pool.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                m_Pool.sortingOrder = ++m_StainOrder;
+                m_PoolAt = centre;
+                m_PoolAge = 0f;
+                m_PoolRegistered = 0f;
+                go.transform.SetPositionAndRotation(centre + Vector3.up * 0.0042f, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+            }
+            m_PoolAge += dt;
+            float size = Mathf.Lerp(0.3f, PoolMax, 1f - Mathf.Exp(-m_PoolAge / 160f));
+            m_Pool.transform.localScale = new Vector3(size, 1f, size * 0.85f);
+            if (size - m_PoolRegistered > 0.15f && BloodTracks.Instance != null)
+            {
+                m_PoolRegistered = size;
+                BloodTracks.Instance.AddPool(m_PoolAt, size * 0.4f);
+            }
         }
 
         /// <summary>A splash of blood on a wall (made here, or by whoever threw it there).</summary>

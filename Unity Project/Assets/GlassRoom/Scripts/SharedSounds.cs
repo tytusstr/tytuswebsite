@@ -39,9 +39,12 @@ namespace GlassRoom
         {
             var clip = ClipFor(sound, index, out float pitch);
             if (clip == null) return;
-            var go = new GameObject("Shared Sound");
+            // (Named by kind, for Settings > Sounds.)
+            string kind = sound == SharedSound.Rustle ? "Room" : sound >= SharedSound.ScooterOn ? "Scooter" : "Steps";
+            var go = new GameObject("Shared Sound " + kind);
             go.transform.position = at;
             var source = go.AddComponent<AudioSource>();
+            source.mute = !SoundSettings.Enabled(kind == "Room" ? SoundKind.Room : kind == "Scooter" ? SoundKind.Scooters : SoundKind.Footsteps);
             source.spatialBlend = 1f;
             source.rolloffMode = AudioRolloffMode.Logarithmic;
             source.minDistance = 2f;

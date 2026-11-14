@@ -8,7 +8,7 @@ namespace GlassRoom
     /// </summary>
     public class SkyDrift : MonoBehaviour
     {
-        const float DegreesPerSecond = 0.4f;
+        const float DegreesPerSecond = 0.55f;
         static readonly int k_Rotation = Shader.PropertyToID("_Rotation");
         Material m_Sky;
         float m_Start;

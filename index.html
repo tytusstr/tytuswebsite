@@ -130,6 +130,15 @@
         if (isAudioError(e) || isAudioError(e.error)) { e.preventDefault(); e.stopImmediatePropagation(); resumeAll(); }
       }
       window.addEventListener("error", swallow, true);
+      // Away from the page (another app or tab) for more than a few seconds, the browser stops
+      // the game and the room lets you go; you'd come back playing on your own. So coming back
+      // after that long reloads the page, which puts you back in the room with everyone.
+      var hiddenAt = 0;
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) { hiddenAt = Date.now(); return; }
+        if (window.gameEntered && hiddenAt && Date.now() - hiddenAt > 8000) location.reload();
+        hiddenAt = 0;
+      });
       window.addEventListener("unhandledrejection", swallow, true);
     })();
 
@@ -153,9 +162,9 @@
     var fill = document.getElementById("fill");
     var config = {
       arguments: [],
-      dataUrl: "Build/0c73f4491e6561e2c4de529cf4256132.data.unityweb",
+      dataUrl: "Build/813e06f194ce4d8db71e71fbcd0844db.data.unityweb",
       frameworkUrl: "Build/d8f18b3dc1bf1ca67fdf9d1356a7ae4f.framework.js.unityweb",
-      codeUrl: "Build/cea814a8a97ef5281d6945bac94e2151.wasm.unityweb",
+      codeUrl: "Build/16f9c6917cc1b997f5ddd6c5f1e90994.wasm.unityweb",
       streamingAssetsUrl: "StreamingAssets",
       companyName: "DefaultCompany",
       productName: "Tytuswebsite",
@@ -248,7 +257,7 @@
     // Rolls numbers for `hold` ms, then reveals one letter every `step` ms in random order.
     function decode(hold, step) {
       if (reduceMotion) return;
-      hold = hold || 1700; step = step || 190;
+      hold = hold || 1150; step = step || 150;
       var hidden = WORD.split("").map(function () { return true; });
       var order = WORD.split("").map(function (_, i) { return i; }).sort(function () { return Math.random() - 0.5; });
       var started = performance.now();
@@ -373,7 +382,7 @@
     enter.addEventListener("click", enterGame);
     var backupTimer = null;
     var script = document.createElement("script");
-    script.src = "Build/211f67583eaba6443fee3ff44059b889.loader.js";
+    script.src = "Build/d1f720f0a27f7457186ae18b6b813bac.loader.js";
     script.onload = function () {
       createUnityInstance(canvas, config, function (progress) {
         fill.style.width = (100 * progress) + "%";

@@ -79,6 +79,7 @@ namespace GlassRoom
             // sits elsewhere than the player's own transform).
             m_Avatar = PlayerAvatarLibrary.Instance.Spawn(index, null);
             m_Avatar.name = "My Body";
+            if (m_Player != null && m_Player.CurrentSeat != null) m_Avatar.SnapSeated();
             if (m_Layer >= 0) m_Avatar.SetLayer(m_Layer);
             var list = new System.Collections.Generic.List<Material>();
             foreach (var r in m_Avatar.GetComponentsInChildren<Renderer>())

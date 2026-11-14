@@ -70,7 +70,7 @@ namespace GlassRoom
         // is closed, and at most a short step per frame, so the slow first moments while the
         // page is still loading don't use it up before anyone can see it.
         float m_JumpHintShown = float.MaxValue;
-        const float JumpHintSeconds = 4f, JumpHintFade = 0.8f;
+        const float JumpHintSeconds = 8f, JumpHintFade = 0.8f;
 
         // Riding.
         StandUpScooter m_Ride;
@@ -214,6 +214,7 @@ namespace GlassRoom
             SyncPointer();
             ReadInput(out Vector2 move, out Vector2 look, out bool run);
             if (TestMove != Vector2.zero) { move = TestMove; run = TestRun; }
+            run = Stamina(run, move);
             if (m_Camera != null && !Mathf.Approximately(m_Camera.fieldOfView, FovSettings.FieldOfView))
                 m_Camera.fieldOfView = FovSettings.FieldOfView;
             if (m_Ride != null && InputModeManager.Mode == ControlMode.Touchscreen)
@@ -477,6 +478,31 @@ namespace GlassRoom
             cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
         }
 
+        // Sprinting tires you: about 7 seconds of it, back in about 5 once you stop (after a
+        // moment). Run right out and you can't sprint again until it's a third back.
+        float m_Stamina = 1f, m_RestFor;
+        bool m_Winded;
+
+        bool Stamina(bool run, Vector2 move)
+        {
+            float dt = Time.deltaTime;
+            bool sprinting = run && move.sqrMagnitude > 0.04f && !m_Winded && m_Ride == null && m_Seat == null && !Down;
+            if (sprinting)
+            {
+                m_Stamina = Mathf.Max(0f, m_Stamina - dt / 7f);
+                m_RestFor = 0.6f;
+                if (m_Stamina <= 0f) { m_Winded = true; if (m_Hud != null) m_Hud.SetSprint(false); }
+            }
+            else
+            {
+                m_RestFor -= dt;
+                if (m_RestFor <= 0f) m_Stamina = Mathf.Min(1f, m_Stamina + dt / 5f);
+                if (m_Winded && m_Stamina >= 0.33f) m_Winded = false;
+            }
+            if (m_Hud != null) m_Hud.SetStamina(m_Stamina);
+            return run && !m_Winded;
+        }
+
         void ApplyMove(Vector2 move, bool run)
         {
             float dt = Time.deltaTime;
@@ -505,7 +531,10 @@ namespace GlassRoom
             float vertical = grounded ? -2f : Mathf.Min(m_Velocity.y, steep ? 0f : m_Velocity.y) - gravity * dt;
             // Landing after a jump or a drop: a heavier step.
             if (grounded && !m_WasGrounded && m_FallSpeed > 3f)
+            {
                 JumpSound(SharedSound.Land, Mathf.Lerp(0.8f, 1.15f, Mathf.InverseLerp(3f, 9f, m_FallSpeed)));
+                if (BloodTracks.Instance != null) BloodTracks.Instance.Land(transform.position, m_Yaw);
+            }
             m_WasGrounded = grounded;
             m_FallSpeed = grounded ? 0f : Mathf.Max(m_FallSpeed, -m_Velocity.y);
             m_GroundedTime = grounded ? m_GroundedTime + dt : 0f;
@@ -514,6 +543,7 @@ namespace GlassRoom
                 vertical = jumpSpeed;
                 m_GroundedTime = 0f;
                 JumpSound(SharedSound.Jump, 0.55f);
+                if (BloodTracks.Instance != null) BloodTracks.Instance.Jump(transform.position);
             }
             m_Velocity = new Vector3(horizontal.x, vertical, horizontal.z);
             m_GroundNormal = Vector3.up;
@@ -569,7 +599,7 @@ namespace GlassRoom
             }
             Vector3 walking = new Vector3(m_Velocity.x, 0f, m_Velocity.z);
             if (walking.magnitude < 0.2f) return;
-            victim.Push(hit.point + Vector3.up * 0.05f, dir * Mathf.Lerp(600f, 950f, Mathf.InverseLerp(walkSpeed, runSpeed, walking.magnitude)), false);
+            victim.Push(hit.point + Vector3.up * 0.05f, dir * Mathf.Lerp(900f, 1425f, Mathf.InverseLerp(walkSpeed, runSpeed, walking.magnitude)), false);
         }
 
         float m_LastBodyHit = -10f;
@@ -967,7 +997,7 @@ namespace GlassRoom
         // ---------- Hitting people ----------
 
         /// <summary>Speed (m/s) above which being hit by a scooter knocks you over (top speed is about 7.8).</summary>
-        public const float KnockSpeed = 5f;
+        public const float KnockSpeed = 3.5f;
         readonly System.Collections.Generic.Dictionary<NetworkPlayer, float> m_LastHit = new System.Collections.Generic.Dictionary<NetworkPlayer, float>();
         Vector3 m_Shove;
         float m_LastScooterHit = -10f;
@@ -1021,6 +1051,8 @@ namespace GlassRoom
             if (Down)
             {
                 // Already down: shoved along the floor (falling again if you were getting up).
+                var limp = Limp;
+                if (limp != null && limp.Active) { limp.Hit(dir, speed); return; }
                 m_Knock = dir * speed * Mathf.Lerp(0.9f, 1.3f, t);
                 if (m_Rising) Fall(dir);
                 Debug.Log($"Hit by a scooter at {speed:F1} m/s while down");
@@ -1053,8 +1085,43 @@ namespace GlassRoom
         public void GetUp()
         {
             if (!m_Down || m_Rising || m_DownTime < 0.9f) return;
+            // From lying limp: up from whichever side they're lying on, facing the way the
+            // getting-up starts (head behind them on their back, ahead of them face down).
+            var limp = Limp;
+            if (limp != null && limp.Active)
+            {
+                m_DownBackwards = limp.OnBack;
+                float yaw = limp.HeadYaw + (m_DownBackwards ? 180f : 0f);
+                Vector3 hips = limp.Pelvis.position;
+                Vector3 at = new Vector3(hips.x, transform.position.y, hips.z);
+                if (!m_DownBackwards) at += Quaternion.Euler(0f, yaw, 0f) * Vector3.forward * 0.07f;
+                m_Controller.enabled = false;
+                transform.position = at;
+                m_Controller.enabled = true;
+                m_DownYaw = m_BodyYaw = m_Yaw = yaw;
+                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
             m_Rising = true;
             m_RiseTime = 0f;
+        }
+
+        // Your own body's rag doll (for lying limp after a fall).
+        PlayerRagdoll Limp
+        {
+            get
+            {
+                var body = GetComponent<LocalPlayerBody>();
+                return body != null && body.Avatar != null ? body.Avatar.Ragdoll : null;
+            }
+        }
+
+        /// <summary>The limp body's pose to share, or null when not lying limp (and whether it's still moving).</summary>
+        public string LimpPose(out bool moving)
+        {
+            var body = GetComponent<LocalPlayerBody>();
+            var limp = body != null && body.Avatar != null ? body.Avatar.GetComponent<PlayerRagdoll>() : null;
+            moving = limp != null && limp.Moving;
+            return limp != null && limp.Active ? limp.Pack() : null;
         }
 
         /// <summary>True while you're lying on the ground (until you get up).</summary>
@@ -1092,11 +1159,25 @@ namespace GlassRoom
                     && !(m_Hud != null && m_Hud.IsMenuOpen) && !ChatBox.Typing)
                     GetUp();
             }
-            m_Knock = Vector3.MoveTowards(m_Knock, Vector3.zero, 4f * dt);
-            float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
-            m_Velocity = new Vector3(m_Knock.x, vertical, m_Knock.z);
-            m_Controller.Move(m_Velocity * dt);
-            KeepRoomToLie();
+            // Once you've hit the floor the body goes limp (a rag doll), and you stay with it.
+            var limp = Limp;
+            if (!m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.55f : 1.3f))
+                limp.Begin(new Vector3(m_Knock.x, 0f, m_Knock.z) * 0.6f, m_Controller);
+            if (limp != null && limp.Active && !m_Rising)
+            {
+                Vector3 hips = limp.Pelvis.position;
+                Vector3 to = new Vector3(hips.x, transform.position.y, hips.z) - transform.position;
+                m_Controller.Move(to);
+                m_Knock = Vector3.zero;
+            }
+            else
+            {
+                m_Knock = Vector3.MoveTowards(m_Knock, Vector3.zero, 4f * dt);
+                float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
+                m_Velocity = new Vector3(m_Knock.x, vertical, m_Knock.z);
+                m_Controller.Move(m_Velocity * dt);
+                KeepRoomToLie();
+            }
 
             m_Yaw = m_DownYaw + Mathf.Clamp(Mathf.DeltaAngle(m_DownYaw, m_Yaw + look.x), -35f, 35f);
             transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
@@ -1253,7 +1334,8 @@ namespace GlassRoom
             if (computer)
             {
                 // Start the jump hint's few seconds once the menu is out of the way.
-                if (m_JumpHintPending && !menu)
+                // (Only once the world has loaded and you're in.)
+                if (m_JumpHintPending && !menu && Multiplayer.RoomReady)
                 {
                     m_JumpHintPending = false;
                     m_JumpHintShown = 0f;
@@ -1296,9 +1378,9 @@ namespace GlassRoom
             m_Hud.SetTutorial(0f);
             // You can't jump on the scooter or from a chair, so the Jump button goes away then;
             // and seated, there's no walking either, so the joystick goes too.
-            m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null && !menu);
-            m_Hud.SetSprintVisible(m_Ride == null && m_Seat == null && !menu);
-            m_Hud.SetJoystickVisible(m_Seat == null && !menu);
+            m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null && !menu && !Down);
+            m_Hud.SetSprintVisible(m_Ride == null && m_Seat == null && !menu && !Down);
+            m_Hud.SetJoystickVisible(m_Seat == null && !menu && !Down);
             if (menu) { m_Hud.SetContextButtons(); return; }
             if (Down) { if (Lying) m_Hud.SetContextButtons(("Get up", GetUp)); else m_Hud.SetContextButtons(); return; }
             if (m_Ride != null) { m_Hud.SetContextButtons(("Unmount", StepOff)); return; }

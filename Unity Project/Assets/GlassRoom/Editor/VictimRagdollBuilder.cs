@@ -57,6 +57,12 @@ namespace GlassRoom.Editor
             body.smearMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/GlassRoom/Materials/Blood smear.mat");
             body.poolMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/GlassRoom/Materials/Blood pool2.mat");
             body.wallMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/GlassRoom/Materials/Blood spray_floor.mat");
+            body.stainMaterials = new[]
+            {
+                AssetDatabase.LoadAssetAtPath<Material>("Assets/GlassRoom/Materials/Blood pool1.mat"),
+                AssetDatabase.LoadAssetAtPath<Material>("Assets/GlassRoom/Materials/Blood pool2.mat"),
+                AssetDatabase.LoadAssetAtPath<Material>("Assets/GlassRoom/Materials/Blood spray_floor.mat"),
+            };
             EditorUtility.SetDirty(body);
         }
 

@@ -185,6 +185,35 @@ namespace GlassRoom
             m_Root.SetActive(false);
         }
 
+        // Mobile, drawing: the board can fill the whole screen; an X brings it back.
+        GameObject m_FullButton, m_ExitFull;
+        bool m_Fullscreen;
+
+        void BuildFullscreen()
+        {
+            m_FullButton = Button(m_Card, "Fullscreen", new Vector2(CardW * 0.5f - 130f, CardH * 0.5f - 60f), new Vector2(210f, 60f), () => SetFullscreen(true)).bg.gameObject;
+            var exit = Rect(m_Root.transform, "Exit Fullscreen", new Vector2(0f, 1f), new Vector2(84f, 84f), new Vector2(60f, -60f));
+            Img(exit, new Color(0.06f, 0.07f, 0.09f, 0.85f), 42f).raycastTarget = true;
+            exit.gameObject.AddComponent<Button>().onClick.AddListener(() => SetFullscreen(false));
+            var x = Label(exit, "X", 40, Color.white);
+            x.fontStyle = FontStyle.Bold;
+            x.alignment = TextAnchor.MiddleCenter;
+            m_ExitFull = exit.gameObject;
+            m_ExitFull.SetActive(false);
+        }
+
+        void SetFullscreen(bool on)
+        {
+            m_Fullscreen = on;
+            m_Board.SetParent(on ? m_Root.transform : m_Card, false);
+            m_Board.anchorMin = m_Board.anchorMax = new Vector2(0.5f, 0.5f);
+            m_Board.anchoredPosition = on ? Vector2.zero : new Vector2(0f, 60f);
+            m_Board.localScale = Vector3.one;
+            m_Card.gameObject.SetActive(!on);
+            m_ExitFull.SetActive(on);
+            if (on) m_ExitFull.transform.SetAsLastSibling();
+        }
+
         // ---- Opening and closing ----
 
         public void Open()
@@ -208,6 +237,7 @@ namespace GlassRoom
 
         public void Close()
         {
+            if (m_Fullscreen) SetFullscreen(false);
             m_Root.SetActive(false);
             if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
         }
@@ -219,6 +249,7 @@ namespace GlassRoom
             var screen = ((RectTransform)transform).rect;
             float scale = Mathf.Min(1f, (screen.width - 20f) / CardW, (screen.height - 20f) / CardH);
             if (!Mathf.Approximately(m_Card.localScale.x, scale)) m_Card.localScale = Vector3.one * scale;
+            if (m_Fullscreen) m_Board.localScale = Vector3.one * Mathf.Min((screen.width - 20f) / BoardW, (screen.height - 20f) / BoardH);
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) Close();
         }
@@ -236,6 +267,9 @@ namespace GlassRoom
             m_DrawTabBg.color = drawing ? k_Light : k_Faint;
             m_DrawTab.color = drawing ? k_Dark : k_Light;
             m_UndoButton.SetActive(drawing);
+            if (m_FullButton == null) BuildFullscreen();
+            m_FullButton.SetActive(drawing && InputModeManager.Mode == ControlMode.Touchscreen);
+            if (!drawing && m_Fullscreen) SetFullscreen(false);
             if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
         }
 

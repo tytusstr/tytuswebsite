@@ -81,6 +81,8 @@ namespace GlassRoom
         /// </summary>
         public void Pose(Vector3 feet, float yaw, float speed, bool seated, float dt, float leanBack = 0f)
         {
+            // Lying limp on the floor: the body is where the rag doll is.
+            if (m_Ragdoll != null && m_Ragdoll.Active) return;
             if (Mathf.Abs(leanBack) > 0.01f)
             {
                 var rotation = Quaternion.Euler(-leanBack, yaw, 0f);
@@ -107,6 +109,16 @@ namespace GlassRoom
         /// <summary>Knocked over by a scooter: down now or not, which way, and how many times so far.</summary>
         public void Knock(bool down, bool backwards, int count)
         {
+            // Getting up from lying limp: straight into getting up from that side.
+            if (!down && m_IsDown && m_Ragdoll != null && m_Ragdoll.Active)
+            {
+                m_Ragdoll.End();
+                if (m_Animator != null)
+                {
+                    m_Animator.SetBool(k_Down, false);
+                    m_Animator.Play(backwards ? "Get Up Back" : "Get Up Front", 0, backwards ? 0f : 0.42f);
+                }
+            }
             m_IsDown = down;
             if (m_Animator == null) return;
             bool first = m_KnocksShown < 0;
@@ -159,14 +171,33 @@ namespace GlassRoom
         public void Hold(StandUpScooter scooter) => m_Ride = scooter;
 
         // After the animation each frame: turn the head, and put the hands on the handlebar.
+        PlayerRagdoll m_Ragdoll;
+        // How much the head follows where they look (eases back in after falling or getting up).
+        float m_HeadWeight = 1f;
+
+        /// <summary>The limp body for lying on the floor (made when first needed).</summary>
+        public PlayerRagdoll Ragdoll => m_Ragdoll != null ? m_Ragdoll : (m_Ragdoll = PlayerRagdoll.Of(this));
+
+        /// <summary>Straight into sitting (a new body for someone already in a chair).</summary>
+        public void SnapSeated()
+        {
+            if (m_Animator == null) return;
+            m_Animator.SetBool(k_Seated, true);
+            m_Animator.Play("Seated", 0, 0f);
+            m_Animator.Update(0f);
+        }
+
         void LateUpdate()
         {
+            if (m_Ragdoll != null && m_Ragdoll.Active) { m_HeadWeight = 0f; return; }
             float k = 1f - Mathf.Exp(-14f * Time.deltaTime);
             m_HeadYaw = Mathf.Lerp(m_HeadYaw, m_TargetHeadYaw, k);
             m_HeadPitch = Mathf.Lerp(m_HeadPitch, m_TargetHeadPitch, k);
             // Not while falling over or getting up (those move the head themselves).
             var state = m_Animator != null ? m_Animator.GetCurrentAnimatorStateInfo(0) : default;
-            if (m_Animator == null || state.IsName("Move") || state.IsName("Seated")) TurnHead();
+            bool free = m_Animator == null || ((state.IsName("Move") || state.IsName("Seated")) && !m_Animator.IsInTransition(0));
+            m_HeadWeight = Mathf.MoveTowards(m_HeadWeight, free ? 1f : 0f, Time.deltaTime / 0.7f);
+            if (m_HeadWeight > 0.001f) TurnHead();
             if (m_Ride != null) HoldGrips(m_Ride);
             UseTool();
         }
@@ -297,10 +328,10 @@ namespace GlassRoom
         void Bend(Transform bone, float yawShare, float pitchShare, ref float yawSoFar, Vector3 bodyRight)
         {
             if (bone == null) return;
-            float yaw = m_HeadYaw * yawShare;
+            float yaw = m_HeadYaw * yawShare * m_HeadWeight;
             yawSoFar += yaw;
             Vector3 axis = Quaternion.AngleAxis(yawSoFar, Vector3.up) * bodyRight;
-            bone.rotation = Quaternion.AngleAxis(m_HeadPitch * pitchShare, axis) * Quaternion.AngleAxis(yaw, Vector3.up) * bone.rotation;
+            bone.rotation = Quaternion.AngleAxis(m_HeadPitch * pitchShare * m_HeadWeight, axis) * Quaternion.AngleAxis(yaw, Vector3.up) * bone.rotation;
         }
 
         void HoldGrips(StandUpScooter scooter)

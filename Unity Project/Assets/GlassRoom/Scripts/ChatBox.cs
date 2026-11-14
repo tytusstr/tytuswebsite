@@ -36,7 +36,7 @@ namespace GlassRoom
         /// <summary>Raised when you send a message (NetworkPlayer passes it on).</summary>
         public static event System.Action<string> Sent;
 
-        public const int MaxLength = 150, MaxKept = 100;
+        public const int MaxLength = 225, MaxKept = 100;
         const float Width = 600f, ListHeight = 330f, FadeZone = 80f;
         // In a notice, where the names go: "\u0001 joined", "\u0002 changed their name to \u0001".
         public const string NameMark = "\u0001", OldNameMark = "\u0002";
@@ -56,7 +56,8 @@ namespace GlassRoom
         GameObject m_InputRow, m_OpenButton, m_Hint, m_BottomHint, m_BottomArrow;
         Font m_Font;
         AudioSource m_Sound;
-        AudioClip m_JoinClip;
+        AudioClip m_JoinClip, m_MessageClip;
+        GameObject m_LimitNote;
         bool m_Open, m_StickToBottom = true;
         int m_ClosedFrame = -1, m_ScrollDown, m_Count;
         float m_NextRefresh;
@@ -88,6 +89,7 @@ namespace GlassRoom
             m_Sound.playOnAwake = false;
             m_Sound.spatialBlend = 0f;
             m_JoinClip = Resources.Load<AudioClip>("Sounds/Player Joined");
+            m_MessageClip = Resources.Load<AudioClip>("Sounds/Chat Message");
 
             // The message list: clipped to its box, scrollable.
             m_Viewport = NewRect("Messages", m_Root, new Vector2(0f, 1f), new Vector2(0f, 1f));
@@ -164,6 +166,19 @@ namespace GlassRoom
             sendText.text = "Send";
             m_InputRow.SetActive(false);
 
+            // Under the box, in red, once you've typed as much as a message can hold.
+            var limit = NewRect("Limit Note", row, new Vector2(0f, 0f), new Vector2(0f, 0f));
+            limit.pivot = new Vector2(0f, 1f);
+            limit.anchoredPosition = new Vector2(4f, -4f);
+            limit.sizeDelta = new Vector2(Width, 30f);
+            var limitText = limit.gameObject.AddComponent<Text>();
+            Style(limitText, 20, new Color(1f, 0.32f, 0.3f));
+            limitText.text = "That's the most a message can hold (" + MaxLength + " characters).";
+            var limitShadow = limit.gameObject.AddComponent<Outline>();
+            limitShadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            m_LimitNote = limit.gameObject;
+            m_LimitNote.SetActive(false);
+
             // Mobile: a small Chat button under the messages.
             var open = NewRect("Chat Button", m_Root, new Vector2(0f, 1f), new Vector2(0f, 1f));
             open.pivot = new Vector2(0f, 1f);
@@ -238,7 +253,11 @@ namespace GlassRoom
         // ---- Messages ----
 
         /// <summary>A message from someone (you included).</summary>
-        public void Add(string name, string message) => AddLine(new Message { name = name, text = message, time = Time.realtimeSinceStartup });
+        public void Add(string name, string message)
+        {
+            AddLine(new Message { name = name, text = message, time = Time.realtimeSinceStartup });
+            if (m_MessageClip != null) m_Sound.PlayOneShot(m_MessageClip, 0.45f);
+        }
 
         /// <summary>A message from before you joined, said this many seconds ago.</summary>
         public void AddOld(string name, string message, bool system, string oldName, float age) =>
@@ -298,7 +317,7 @@ namespace GlassRoom
             bg.sprite = UISprites.RoundedPanel;
             bg.type = Image.Type.Sliced;
             bg.pixelsPerUnitMultiplier = UISprites.RoundedPanel != null && UISprites.RoundedPanel.border.x > 0 ? UISprites.RoundedPanel.border.x / 8f : 1f;
-            bg.color = (m_Count++ % 2 == 0) ? new Color(0.30f, 0.31f, 0.33f, 0.42f) : new Color(0.07f, 0.075f, 0.085f, 0.5f);
+            bg.color = (m_Count++ % 2 == 0) ? new Color(0.24f, 0.25f, 0.27f, 0.62f) : new Color(0.12f, 0.125f, 0.14f, 0.66f);
             bg.raycastTarget = false;
             var rowLayout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
             rowLayout.padding = new RectOffset(10, 10, 4, 5);
@@ -408,6 +427,8 @@ namespace GlassRoom
             bool menu = ControlsHUD.AnyMenuOpen;
             bool showButton = on && mobile && !m_Open && !menu;
             if (m_OpenButton.activeSelf != showButton) m_OpenButton.SetActive(showButton);
+            bool atLimit = m_Open && m_Input.text.Length >= MaxLength;
+            if (m_LimitNote.activeSelf != atLimit) m_LimitNote.SetActive(atLimit);
             bool showHint = on && !mobile && !m_Open && !menu && HintSettings.Enabled;
             if (m_Hint.activeSelf != showHint) m_Hint.SetActive(showHint);
             bool scrolledUp = on && CanScroll && !AtBottom() && m_GlideFrom < 0f;

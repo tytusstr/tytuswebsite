@@ -130,6 +130,15 @@
         if (isAudioError(e) || isAudioError(e.error)) { e.preventDefault(); e.stopImmediatePropagation(); resumeAll(); }
       }
       window.addEventListener("error", swallow, true);
+      // Away from the page (another app or tab) for more than a few seconds, the browser stops
+      // the game and the room lets you go; you'd come back playing on your own. So coming back
+      // after that long reloads the page, which puts you back in the room with everyone.
+      var hiddenAt = 0;
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) { hiddenAt = Date.now(); return; }
+        if (window.gameEntered && hiddenAt && Date.now() - hiddenAt > 8000) location.reload();
+        hiddenAt = 0;
+      });
       window.addEventListener("unhandledrejection", swallow, true);
     })();
 
@@ -256,7 +265,7 @@
     // Rolls numbers for `hold` ms, then reveals one letter every `step` ms in random order.
     function decode(hold, step) {
       if (reduceMotion) return;
-      hold = hold || 1700; step = step || 190;
+      hold = hold || 1150; step = step || 150;
       var hidden = WORD.split("").map(function () { return true; });
       var order = WORD.split("").map(function (_, i) { return i; }).sort(function () { return Math.random() - 0.5; });
       var started = performance.now();

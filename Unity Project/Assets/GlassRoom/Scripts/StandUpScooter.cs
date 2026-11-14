@@ -124,8 +124,14 @@ namespace GlassRoom
         float m_Speed;
         bool m_Ridden;
 
+        Vector3 m_Home;
+        Quaternion m_HomeTurn;
+        float m_LastRemote;
+
         void Awake()
         {
+            m_Home = transform.position;
+            m_HomeTurn = transform.rotation;
             BuildHeadlight();
             m_Effects = NewSource("Step", null, false);
             m_Motor = NewSource("Motor", AtFullLevel(motorClip), true);
@@ -318,6 +324,7 @@ namespace GlassRoom
             m_RemoteYaw = yaw;
             m_Speed = speed;
             m_Ridden = ridden; // headlight on while someone rides it
+            m_LastRemote = Time.time;
         }
 
         Transform m_LeftGrip, m_RightGrip;
@@ -350,6 +357,15 @@ namespace GlassRoom
         void Update()
         {
             float dt = Time.deltaTime;
+            // Its rider has gone (left the game): lights off.
+            if (m_RemoteControlled && m_Ridden && Time.time - m_LastRemote > 1.5f) m_Ridden = false;
+            // Somehow fallen out of the building: back where it started.
+            if (transform.position.y < -10f)
+            {
+                transform.SetPositionAndRotation(m_Home, m_HomeTurn);
+                m_Speed = 0f;
+                m_RemoteControlled = false;
+            }
             UpdateHeadlight(dt);
             if (m_RemoteControlled)
             {

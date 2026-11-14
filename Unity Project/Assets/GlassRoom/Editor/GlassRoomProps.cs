@@ -481,6 +481,7 @@ namespace GlassRoom.Editor
             foreach (string guid in AssetDatabase.FindAssets("t:AudioClip", new[] { "Assets/GlassRoom/Audio/Blood" }))
                 clips.Add(AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid)));
             tracks.squelchClips = clips.ToArray();
+            tracks.wheelClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/GlassRoom/Audio/Blood/Wheel Through Blood.wav");
             // Transparent, lit and glossy like the rest of the blood: prints are wet red at
             // whatever strength each one has, and lit by the room (not glowing in the dark).
             string path = "Assets/GlassRoom/Materials/Blood Print.mat";
