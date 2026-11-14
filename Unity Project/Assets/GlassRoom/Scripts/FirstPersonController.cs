@@ -1096,6 +1096,7 @@ namespace GlassRoom
             float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
             m_Velocity = new Vector3(m_Knock.x, vertical, m_Knock.z);
             m_Controller.Move(m_Velocity * dt);
+            KeepRoomToLie();
 
             m_Yaw = m_DownYaw + Mathf.Clamp(Mathf.DeltaAngle(m_DownYaw, m_Yaw + look.x), -35f, 35f);
             transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
@@ -1115,6 +1116,57 @@ namespace GlassRoom
                 cameraPivot.localPosition = new Vector3(0f, m_EyeHeight, 0f);
                 cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
             }
+            else KeepViewInside();
+        }
+
+        // Lying down your body reaches out up to a metre or so from where you stood: you're
+        // moved off any wall so all of it stays inside the room.
+        void KeepRoomToLie()
+        {
+            Vector3 along = Quaternion.Euler(0f, m_DownYaw, 0f) * Vector3.forward;
+            Vector3 side = Vector3.Cross(Vector3.up, along);
+            Vector3 push = Vector3.zero;
+            // How far the body reaches each way (measured from the lying poses, plus a little):
+            // on the back it lies across, mostly to the left; on the front, along the way you fell.
+            var reach = m_DownBackwards
+                ? new[] { (along, 0.85f), (-along, 0.52f), (side, 0.9f), (-side, 1.2f) }
+                : new[] { (along, 1.05f), (-along, 1.05f), (side, 0.78f), (-side, 0.78f) };
+            foreach (var (dir, need) in reach)
+                foreach (float height in new[] { 0.12f, 0.4f })
+                {
+                    Vector3 from = transform.position + Vector3.up * height;
+                    if (FirstWall(from, dir, need, out float distance)) { push -= dir * (need - distance); break; }
+                }
+            if (push.sqrMagnitude > 0.000001f) m_Controller.Move(push);
+        }
+
+        // Your view on the floor never goes through a wall: it stops just short of it.
+        void KeepViewInside()
+        {
+            Vector3 from = transform.position + Vector3.up * 0.45f;
+            Vector3 to = cameraPivot.position;
+            Vector3 dir = to - from;
+            float length = dir.magnitude;
+            if (length < 0.001f) return;
+            dir /= length;
+            if (FirstWall(from, dir, length + 0.15f, out float distance, 0.1f))
+                cameraPivot.position = from + dir * Mathf.Max(0f, distance - 0.15f);
+        }
+
+        // The nearest wall or fixed object along a line (not people, the scooters or the body on the floor).
+        static bool FirstWall(Vector3 from, Vector3 dir, float range, out float distance, float radius = 0.12f)
+        {
+            distance = range;
+            bool found = false;
+            foreach (var hit in Physics.SphereCastAll(from, radius, dir, range, ~0, QueryTriggerInteraction.Ignore))
+            {
+                var c = hit.collider;
+                if (hit.distance <= 0f || c is CharacterController || c.attachedRigidbody != null
+                    || c.GetComponentInParent<PlayerAvatar>() != null || c.GetComponentInParent<StandUpScooter>() != null) continue;
+                if (Vector3.Dot(hit.normal, Vector3.up) > 0.6f) continue; // the floor
+                if (hit.distance < distance) { distance = hit.distance; found = true; }
+            }
+            return found;
         }
 
         // A moving scooter (anyone's, as you see it here, so there's no delay) that runs into
@@ -1231,7 +1283,7 @@ namespace GlassRoom
                 else m_Hud.SetKeyHints();
                 // The first few seconds: how to jump and sprint, on two lines at the bottom.
                 bool tutorial = !menu && HintSettings.Enabled && m_JumpHintShown < JumpHintSeconds + JumpHintFade
-                                && target == null && m_Seat == null && m_Ride == null;
+                                && target == null && m_Seat == null && m_Ride == null && !Down;
                 if (tutorial)
                     m_Hud.SetTutorial(1f - Mathf.Clamp01((m_JumpHintShown - JumpHintSeconds) / JumpHintFade),
                         ("Jump", "<b>SPACE</b> to jump"), ("Sprint", "<b>Double tap W</b> / <b>SHIFT</b> to sprint"));
