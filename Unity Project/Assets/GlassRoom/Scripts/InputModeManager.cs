@@ -24,6 +24,7 @@ namespace GlassRoom
         public const string LowGraphics = "GlassRoom.LowGraphics";
         public const string Hints = "GlassRoom.Hints";
         public const string Names = "GlassRoom.Names";
+        public const string Chat = "GlassRoom.Chat";
         public const string Mouse = "GlassRoom.Mouse";
         public const string FieldOfView = "GlassRoom.FieldOfView";
 
@@ -47,12 +48,17 @@ namespace GlassRoom
         {
             if (PlayerPrefs.HasKey(Mode))
                 InputModeManager.Mode = PlayerPrefs.GetInt(Mode) == 1 ? ControlMode.Touchscreen : ControlMode.KeyboardMouse;
+            // The very first time: mobile controls on a phone or tablet, computer controls otherwise.
+            else
+                InputModeManager.Mode = WebPage.IsMobile ? ControlMode.Touchscreen : ControlMode.KeyboardMouse;
             if (PlayerPrefs.HasKey(Sensitivity))
                 LookSettings.SliderPosition = Mathf.Clamp01(PlayerPrefs.GetFloat(Sensitivity));
             if (PlayerPrefs.HasKey(Hints))
                 HintSettings.Enabled = PlayerPrefs.GetInt(Hints) != 0;
             if (PlayerPrefs.HasKey(Names))
                 NameSettings.Enabled = PlayerPrefs.GetInt(Names) != 0;
+            if (PlayerPrefs.HasKey(Chat))
+                ChatSettings.Enabled = PlayerPrefs.GetInt(Chat) != 0;
             if (PlayerPrefs.HasKey(Mouse))
                 MouseSettings.Enabled = PlayerPrefs.GetInt(Mouse) != 0;
         }
@@ -169,6 +175,25 @@ namespace GlassRoom
             {
                 s_Enabled = value;
                 SavedSettings.SetInt(SavedSettings.Hints, value ? 1 : 0);
+            }
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => s_Enabled = true;
+    }
+
+    /// <summary>The "Chat" switch: the text chat in the top-left corner (on by default).</summary>
+    public static class ChatSettings
+    {
+        static bool s_Enabled = true;
+
+        public static bool Enabled
+        {
+            get => s_Enabled;
+            set
+            {
+                s_Enabled = value;
+                SavedSettings.SetInt(SavedSettings.Chat, value ? 1 : 0);
             }
         }
 

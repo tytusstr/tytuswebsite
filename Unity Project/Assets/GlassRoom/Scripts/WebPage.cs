@@ -16,6 +16,9 @@ namespace GlassRoom
         [DllImport("__Internal")] static extern void WebPage_Reveal();
         [DllImport("__Internal")] static extern string WebPage_PlayerName();
         [DllImport("__Internal")] static extern void WebPage_EditName();
+        [DllImport("__Internal")] static extern void WebPage_SetPlayerName(string name);
+        [DllImport("__Internal")] static extern int WebPage_IsMobile();
+        [DllImport("__Internal")] static extern void WebPage_ShowGone(string message);
         /// <summary>True when running in a web page (where the page captures the pointer).</summary>
         public const bool InBrowser = true;
 #else
@@ -25,8 +28,12 @@ namespace GlassRoom
         static int WebPage_PointerLocked() => 0;
         static int WebPage_Entered() => 1;
         static void WebPage_Reveal() { }
-        static string WebPage_PlayerName() => "";
+        static string s_EditorName = "";
+        static string WebPage_PlayerName() => s_EditorName;
         static void WebPage_EditName() { }
+        static void WebPage_SetPlayerName(string name) => s_EditorName = name;
+        static int WebPage_IsMobile() => 0;
+        static void WebPage_ShowGone(string message) => UnityEngine.Debug.Log("Gone: " + message);
         public const bool InBrowser = false;
 #endif
 
@@ -52,6 +59,15 @@ namespace GlassRoom
         /// <summary>Opens the box for changing your name, over the game.</summary>
         public static void EditName() => WebPage_EditName();
 
+        /// <summary>Sets (and remembers) your name; empty forgets it.</summary>
+        public static void SetPlayerName(string name) => WebPage_SetPlayerName((name ?? "").Trim());
+
+        /// <summary>True on a phone or tablet (outside a browser: never).</summary>
+        public static bool IsMobile => WebPage_IsMobile() != 0;
+
+        /// <summary>Stops play for this player with a message and a Reload button.</summary>
+        public static void ShowGone(string message) => WebPage_ShowGone(message);
+
         /// <summary>The name typed on the Enter screen ("" if none).</summary>
         public static string PlayerName
         {
@@ -59,7 +75,7 @@ namespace GlassRoom
             {
                 string name = WebPage_PlayerName() ?? "";
                 name = name.Trim();
-                return name.Length > 16 ? name.Substring(0, 16) : name;
+                return name.Length > 20 ? name.Substring(0, 20) : name;
             }
         }
 

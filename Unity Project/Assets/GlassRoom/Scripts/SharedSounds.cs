@@ -17,6 +17,8 @@ namespace GlassRoom
         ScooterOn,
         /// <summary>Stepping off a scooter (index: scooter number).</summary>
         ScooterOff,
+        /// <summary>A scooter crashing into something (index: scooter number).</summary>
+        ScooterCrash,
     }
 
     /// <summary>
@@ -73,10 +75,11 @@ namespace GlassRoom
                 }
                 case SharedSound.ScooterOn:
                 case SharedSound.ScooterOff:
+                case SharedSound.ScooterCrash:
                 {
                     var scooter = Multiplayer.ScooterAt(index);
                     if (scooter == null) return null;
-                    return sound == SharedSound.ScooterOn ? scooter.stepOnClip : scooter.stepOffClip;
+                    return sound == SharedSound.ScooterOn ? scooter.stepOnClip : sound == SharedSound.ScooterOff ? scooter.stepOffClip : scooter.crashClip;
                 }
             }
             return null;

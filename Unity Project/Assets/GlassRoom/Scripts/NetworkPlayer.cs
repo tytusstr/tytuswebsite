@@ -17,7 +17,10 @@ namespace GlassRoom
     {
         [Networked] public int AvatarIndex { get; set; }
         /// <summary>The name typed on the Enter screen, shown above their head.</summary>
-        [Networked] public NetworkString<_16> PlayerName { get; set; }
+        [Networked] public NetworkString<_32> PlayerName { get; set; }
+        /// <summary>Movement relative to their body (x sideways, y forward), for sidesteps and walking backwards.</summary>
+        [Networked] public Vector2 Motion { get; set; }
+        [Networked] public NetworkBool Airborne { get; set; }
         [Networked] public float Speed { get; set; }
         [Networked] public NetworkBool Seated { get; set; }
         [Networked] public int SeatIndex { get; set; }
@@ -43,6 +46,7 @@ namespace GlassRoom
 
         FirstPersonController m_Me;
         float m_NextNameCheck;
+        CapsuleCollider m_Body;
         LocalPlayerBody m_MyBody;
         MusicSpeaker m_Radio;
         PlayerAvatar m_Avatar;
@@ -70,6 +74,10 @@ namespace GlassRoom
                 BloodTracks.MarkPlaced += OnMarkPlaced;
                 BloodTracks.Squelched += OnSquelched;
                 SharedSounds.Played += OnSound;
+                ChatBox.Sent += OnChat;
+                MarkerBoard.TextRequested += OnBoardText;
+                MarkerBoard.StrokeRequested += OnBoardStroke;
+                MarkerBoard.EraseRequested += OnBoardErase;
             }
             else
             {
@@ -96,6 +104,10 @@ namespace GlassRoom
             BloodTracks.MarkPlaced -= OnMarkPlaced;
             BloodTracks.Squelched -= OnSquelched;
             SharedSounds.Played -= OnSound;
+            ChatBox.Sent -= OnChat;
+            MarkerBoard.TextRequested -= OnBoardText;
+            MarkerBoard.StrokeRequested -= OnBoardStroke;
+            MarkerBoard.EraseRequested -= OnBoardErase;
             if (m_Avatar != null) Destroy(m_Avatar.gameObject);
         }
 
@@ -114,6 +126,8 @@ namespace GlassRoom
             PlayerAvatar.Placement(m_Me.transform.position, m_Me.BodyYaw, m_Me.CurrentSeat, m_Me.CurrentRide, out var feet, out var yaw);
             transform.SetPositionAndRotation(feet, Quaternion.Euler(0f, yaw, 0f));
             Speed = m_Me.GroundSpeed;
+            Motion = m_Me.LocalMotion;
+            Airborne = m_Me.Airborne;
             Seated = m_Me.CurrentSeat != null;
             SeatIndex = Seated ? Multiplayer.SeatIndex(m_Me.CurrentSeat) : -1;
             Riding = m_Me.CurrentRide != null;
@@ -210,6 +224,85 @@ namespace GlassRoom
             if (BloodTracks.Instance != null) BloodTracks.Instance.SquelchAt(at, loudness);
         }
 
+        // ---- The marker board: what you put on it, sent to everyone (you included) ----
+
+        bool Mine => Object != null && Object.IsValid && HasStateAuthority;
+        void OnBoardText(string s, Rect box, int color) { if (Mine) RPC_BoardText(s, new Vector4(box.x, box.y, box.width, box.height), (byte)color); }
+        void OnBoardStroke(int id, int color, int size, string packed, bool last) { if (Mine) RPC_BoardStroke(id, (byte)color, (byte)size, packed, last); }
+        void OnBoardErase() { if (Mine) RPC_BoardErase(); }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_BoardText(string s, Vector4 box, byte color)
+        {
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddText(PlayerId, s, new Rect(box.x, box.y, box.z, box.w), color, true);
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_BoardStroke(int id, byte color, byte size, string packed, NetworkBool last)
+        {
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddStroke(PlayerId, id, color, size, packed, last, true);
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_BoardErase()
+        {
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.Erase(PlayerId, true);
+        }
+
+        // Someone new: what's already on the board, shown straight away.
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_BoardTextFor([RpcTarget] PlayerRef player, string s, Vector4 box, byte color)
+        {
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddText(-3, s, new Rect(box.x, box.y, box.z, box.w), color, false);
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_BoardStrokeFor([RpcTarget] PlayerRef player, int id, byte color, byte size, string packed, NetworkBool last)
+        {
+            if (MarkerBoard.Instance != null) MarkerBoard.Instance.AddStroke(-3, id, color, size, packed, last, false);
+        }
+
+        IEnumerator SendBoardTo(PlayerRef player)
+        {
+            var board = MarkerBoard.Instance;
+            if (board == null) yield break;
+            var texts = new System.Collections.Generic.List<(string, Rect, int)>();
+            var lines = new System.Collections.Generic.List<(int, int, System.Collections.Generic.List<Vector2>)>();
+            board.Export((s, r, c) => texts.Add((s, r, c)), (c, z, p) => lines.Add((c, z, new System.Collections.Generic.List<Vector2>(p))));
+            int sent = 0;
+            foreach (var t in texts)
+            {
+                if (Object == null || !Object.IsValid) yield break;
+                RPC_BoardTextFor(player, t.Item1, new Vector4(t.Item2.x, t.Item2.y, t.Item2.width, t.Item2.height), (byte)t.Item3);
+                if (++sent % 8 == 0) yield return null;
+            }
+            int id = 100000;
+            foreach (var line in lines)
+            {
+                id++;
+                var points = line.Item3;
+                for (int from = 0; from < points.Count; from += 40)
+                {
+                    if (Object == null || !Object.IsValid) yield break;
+                    int n = Mathf.Min(40, points.Count - from);
+                    RPC_BoardStrokeFor(player, id, (byte)line.Item1, (byte)line.Item2, StrokeGraphic.Pack(points, from, n), from + n >= points.Count);
+                    if (++sent % 8 == 0) yield return null;
+                }
+            }
+        }
+
+        // Chat: your message to everyone (you included, so it shows in your own chat too).
+        void OnChat(string message)
+        {
+            if (Object != null && Object.IsValid && HasStateAuthority) RPC_Chat(message);
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        void RPC_Chat(string message)
+        {
+            if (ChatBox.Instance != null) ChatBox.Instance.Add(PlayerName.ToString(), message);
+        }
+
         [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
         void RPC_Sound(byte sound, int index, Vector3 at, float volume) => SharedSounds.PlayRemote((SharedSound)sound, index, at, volume);
 
@@ -228,6 +321,7 @@ namespace GlassRoom
                 RPC_MarkFor(player, m.tyre, m.at, m.yaw, m.size, m.strength, m.mirror);
                 if (++sent % 12 == 0) yield return null;
             }
+            yield return SendBoardTo(player);
         }
 
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
@@ -265,6 +359,7 @@ namespace GlassRoom
                 body.center = new Vector3(0f, 0.9f, 0f);
                 body.height = 1.75f;
                 body.radius = 0.25f;
+                m_Body = body;
                 m_AvatarShown = AvatarIndex;
             }
 
@@ -275,9 +370,16 @@ namespace GlassRoom
             Vector3 feet = transform.position;
             float yaw = transform.eulerAngles.y;
             if (ride != null || seat != null) PlayerAvatar.Placement(feet, yaw, seat, ride, out feet, out yaw);
+            m_Avatar.Move(Motion);
             m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime, PlayerAvatar.LeanBack(seat));
+            // While you ride, people don't block you (your scooter pushes them on their side);
+            // walking, you bump into them.
+            if (m_Body != null) m_Body.enabled = m_Me == null || m_Me.CurrentRide == null;
             m_Avatar.Look(HeadYaw, HeadPitch);
             m_Avatar.Hold(ride);
+            var board = MarkerBoard.Instance;
+            if (board != null && board.ActiveAuthor == PlayerId) m_Avatar.UseBoard(board.PenPoint, board.Facing, board.ActiveTool, board.PenColor);
+            else m_Avatar.UseBoard(Vector3.zero, Vector3.zero, MarkerBoard.Tool.None, Color.black);
             Footsteps();
         }
 
@@ -287,9 +389,9 @@ namespace GlassRoom
             Vector3 p = transform.position;
             float moved = new Vector2(p.x - m_LastPosition.x, p.z - m_LastPosition.z).magnitude;
             m_LastPosition = p;
-            if (Seated || Riding || Speed < 0.4f || moved > 2f) { m_StepDistance = 0f; return; }
+            if (Seated || Riding || Airborne || Speed < 0.4f || moved > 2f) { m_StepDistance = 0f; return; }
             m_StepDistance += moved;
-            float stride = Speed > 3.5f ? 1.4f : 0.75f;
+            float stride = m_Me != null ? Mathf.Lerp(m_Me.walkStride, m_Me.runStride, Mathf.InverseLerp(m_Me.walkSpeed, m_Me.runSpeed, Speed)) : 0.9f;
             if (m_StepDistance < stride) return;
             m_StepDistance = 0f;
             var clips = m_Me != null ? m_Me.footstepClips : null;

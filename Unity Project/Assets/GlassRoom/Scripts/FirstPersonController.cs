@@ -28,8 +28,8 @@ namespace GlassRoom
 
         [Header("Feel")]
         public float bobAmount = 0.028f;
-        public float walkStride = 1.2f;
-        public float runStride = 1.75f;
+        public float walkStride = 0.9f;
+        public float runStride = 1.6f;
         public float footstepVolume = 0.9f;
         [Tooltip("Recorded footstep sounds.")]
         public AudioClip[] footstepClips;
@@ -106,6 +106,7 @@ namespace GlassRoom
             m_Interactables.AddRange(FindObjectsByType<StandUpScooter>(FindObjectsSortMode.None));
             m_Interactables.AddRange(FindObjectsByType<MusicSpeaker>(FindObjectsSortMode.None));
             m_Interactables.AddRange(FindObjectsByType<Seat>(FindObjectsSortMode.None));
+            m_Interactables.AddRange(FindObjectsByType<MarkerBoard>(FindObjectsSortMode.None));
             SetupFootsteps();
             InputModeManager.ModeChanged += OnModeChanged;
             OnModeChanged(InputModeManager.Mode);
@@ -223,6 +224,12 @@ namespace GlassRoom
                 // Seated: look around, but not round behind the chair's back; walking or jumping
                 // stands you up.
                 ApplyLook(look);
+                // Looking down only so far: any further and you'd see inside your own shirt.
+                if (m_Pitch > SeatedLookDown)
+                {
+                    m_Pitch = SeatedLookDown;
+                    cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
+                }
                 float chair = Quaternion.LookRotation(m_Seat.Facing).eulerAngles.y;
                 float turned = Mathf.Clamp(Mathf.DeltaAngle(chair, m_Yaw), -SeatedLookLimit, SeatedLookLimit);
                 if (!Mathf.Approximately(chair + turned, m_Yaw))
@@ -245,7 +252,12 @@ namespace GlassRoom
             else
             {
                 ApplyLook(look);
-                ApplyMove(move, run);
+                // Writing or drawing on the board: you stay where you are until it's up.
+                if (!MarkerBoard.LocalBusy)
+                {
+                    ApplyMove(move, run);
+                    PushedByScooters(Time.deltaTime);
+                }
             }
             UpdateBodyYaw(Time.deltaTime);
             // Somehow fallen out of the building: back to where you started.
@@ -261,7 +273,7 @@ namespace GlassRoom
         const float FallLimit = -20f;
         Vector3 m_StartPosition;
         float m_StartYaw;
-        const float SeatedLookLimit = 90f;
+        const float SeatedLookLimit = 90f, SeatedLookDown = 40f;
         float m_BodyYaw;
 
         /// <summary>Which way your body faces, in degrees.</summary>
@@ -272,6 +284,17 @@ namespace GlassRoom
                 if (m_Seat != null) return Quaternion.LookRotation(m_Seat.Facing).eulerAngles.y;
                 if (m_Ride != null) return m_Ride.transform.eulerAngles.y;
                 return m_BodyYaw;
+            }
+        }
+
+        /// <summary>Your movement over the ground relative to your body: x sideways (right +), y forward.</summary>
+        public Vector2 LocalMotion
+        {
+            get
+            {
+                if (m_Ride != null || m_Seat != null || m_Controller == null || !m_Controller.enabled) return Vector2.zero;
+                Vector3 v = Quaternion.Euler(0f, -BodyYaw, 0f) * m_Controller.velocity;
+                return new Vector2(v.x, v.z);
             }
         }
 
@@ -314,6 +337,8 @@ namespace GlassRoom
             // Read every frame so a press while the menu is open doesn't jump later.
             bool phoneJump = m_Hud.ConsumeJump();
             m_JumpPressed = false;
+            // Typing (chat, your name): the game leaves the keyboard alone.
+            if (ChatBox.Typing || (ChatBox.Instance != null && ChatBox.Instance.IsOpen)) return;
 
             var keyboard = Keyboard.current;
             if (keyboard != null)
@@ -490,7 +515,7 @@ namespace GlassRoom
 
         void UpdateSteps(float groundSpeed, float dt)
         {
-            bool moving = m_Controller.isGrounded && groundSpeed > 0.25f;
+            bool moving = m_WasGrounded && m_Controller.isGrounded && groundSpeed > 0.25f;
             float runT = Mathf.InverseLerp(walkSpeed, runSpeed, groundSpeed);
             float stride = Mathf.Lerp(walkStride, runStride, runT);
 
@@ -546,6 +571,9 @@ namespace GlassRoom
                 Component thing = hit.collider.GetComponentInParent<StandUpScooter>();
                 if (thing == null) thing = hit.collider.GetComponentInParent<MusicSpeaker>();
                 if (thing == null) thing = hit.collider.GetComponentInParent<Seat>();
+                if (thing == null) thing = hit.collider.GetComponentInParent<MarkerBoard>();
+                // The board only from right in front of it.
+                if (thing is MarkerBoard board && !board.InFront(transform.position)) continue;
                 if (thing == null || !WithinReach(hit.collider)) continue;
                 if (hit.distance < nearest)
                 {
@@ -577,6 +605,11 @@ namespace GlassRoom
             if (m_Seat != null && !(thing is MusicSpeaker))
             {
                 if (!rightButton) StandUp();
+                return;
+            }
+            if (thing is MarkerBoard && !rightButton && m_Ride == null && BoardPanel.Instance != null && !MarkerBoard.LocalBusy)
+            {
+                BoardPanel.Instance.Open();
                 return;
             }
             if (thing is Seat seat && !rightButton && m_Ride == null)
@@ -625,6 +658,20 @@ namespace GlassRoom
             m_BodyYaw = yaw;
             m_Velocity = Vector3.zero;
             m_Controller.enabled = was;
+        }
+
+        /// <summary>Puts you at a spot, turning you towards a direction (used while you write on the board).</summary>
+        public void HoldAt(Vector3 feet, float yaw)
+        {
+            if (m_Seat != null || m_Ride != null) return;
+            bool was = m_Controller.enabled;
+            m_Controller.enabled = false;
+            transform.position = feet;
+            m_Controller.enabled = was;
+            m_Velocity = Vector3.zero;
+            m_Yaw = Mathf.MoveTowardsAngle(m_Yaw, yaw, 240f * Time.deltaTime);
+            m_BodyYaw = m_Yaw;
+            transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
         }
 
         public bool Airborne => m_Ride == null && m_Seat == null && m_Controller != null && m_Controller.enabled && !m_Controller.isGrounded;
@@ -711,6 +758,8 @@ namespace GlassRoom
             // Stand on the deck: the player's capsule becomes the scooter's footprint.
             m_Controller.enabled = false;
             transform.position = scooter.transform.position;
+            // Keep looking where you were: the head stays turned, the scooter faces its own way.
+            float lookingAt = m_Yaw;
             m_Yaw = scooter.transform.eulerAngles.y;
             transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
             m_Controller.radius = scooter.footprintRadius;
@@ -718,10 +767,11 @@ namespace GlassRoom
             m_Controller.enabled = true;
 
             cameraPivot.localPosition = new Vector3(0f, m_EyeHeight + scooter.deckHeight, scooter.riderOffsetZ);
-            m_RideLookYaw = 0f;
+            m_RideLookYaw = Mathf.Clamp(Mathf.DeltaAngle(m_Yaw, lookingAt), -RideLookLimit, RideLookLimit);
             m_RideTurn = 0f;
-            m_Pitch = scooter.ridePitch;
+            cameraPivot.localRotation = Quaternion.Euler(m_Pitch, m_RideLookYaw, 0f);
             scooter.SetRidden(true);
+            IgnoreScooters(true);
             SharedSounds.Raise(SharedSound.ScooterOn, Multiplayer.ScooterIndex(scooter), scooter.transform.position, 0.9f);
         }
 
@@ -731,6 +781,7 @@ namespace GlassRoom
             if (scooter == null) return;
             m_Ride = null;
             scooter.SetRidden(false);
+            IgnoreScooters(false);
             SharedSounds.Raise(SharedSound.ScooterOff, Multiplayer.ScooterIndex(scooter), scooter.transform.position, 0.9f);
 
             // Step off to the left if there's room, otherwise the right, otherwise behind.
@@ -786,16 +837,83 @@ namespace GlassRoom
 
             float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
             m_Velocity = transform.forward * m_RideSpeed + Vector3.up * vertical;
+            IgnoreScooters(true);
             m_Controller.Move(m_Velocity * dt);
+            ShoveScooters(scooter, dt);
 
-            // Bumping into something stops the scooter instead of grinding against it.
+            // Bumping into something stops the scooter instead of grinding against it; hitting it
+            // fast makes a crash.
             Vector3 actual = m_Controller.velocity;
             float along = Vector3.Dot(new Vector3(actual.x, 0f, actual.z), transform.forward);
             // Only judged once it's properly moving, so pulling away from rest isn't mistaken for a bump.
-            if (Mathf.Abs(m_RideSpeed) > 0.5f && Mathf.Abs(along) < Mathf.Abs(m_RideSpeed) * 0.5f) m_RideSpeed = along;
+            if (Mathf.Abs(m_RideSpeed) > 0.5f && Mathf.Abs(along) < Mathf.Abs(m_RideSpeed) * 0.5f)
+            {
+                float lost = Mathf.Abs(m_RideSpeed) - Mathf.Abs(along);
+                if (lost > StandUpScooter.CrashSpeed) scooter.Crash(lost);
+                m_RideSpeed = along;
+            }
 
             scooter.transform.SetPositionAndRotation(transform.position, transform.rotation);
             scooter.UpdateMotion(m_RideSpeed);
+        }
+
+        // ---------- Scooters bumping ----------
+
+        // While riding, the other scooters don't stop you: you shove them (unless someone is on
+        // one, which stays solid). Walking, every scooter is solid as usual.
+        void IgnoreScooters(bool riding)
+        {
+            foreach (var other in Multiplayer.Scooters)
+            {
+                if (other == null || other == m_Ride) continue;
+                bool ignore = riding && !Multiplayer.ScooterRiddenByOther(other);
+                foreach (var c in other.GetComponentsInChildren<Collider>())
+                    if (c.enabled && !c.isTrigger) Physics.IgnoreCollision(m_Controller, c, ignore);
+            }
+        }
+
+        // Your scooter running into a free one pushes it along (it's then yours to share, like
+        // stepping on it), and it rolls on a little.
+        void ShoveScooters(StandUpScooter mine, float dt)
+        {
+            Vector3 me = transform.position;
+            foreach (var other in Multiplayer.Scooters)
+            {
+                if (other == null || other == mine || Multiplayer.ScooterRiddenByOther(other)) continue;
+                Vector3 apart = other.transform.position - me;
+                apart.y = 0f;
+                float gap = mine.footprintRadius + other.footprintRadius - 0.1f;
+                float distance = apart.magnitude;
+                if (distance >= gap || distance < 0.001f) continue;
+                Vector3 dir = apart / distance;
+                float closing = Vector3.Dot(m_Controller.velocity, dir);
+                if (closing <= 0.05f) continue;
+                if (other.RemoteControlled) { other.TakeBackControl(); Multiplayer.ClaimScooter(other); }
+                other.Shove(dir * (gap - distance), closing * 0.8f);
+                if (closing > StandUpScooter.CrashSpeed) mine.Crash(closing * 0.6f);
+            }
+        }
+
+        // Walking: a moving scooter (someone riding it, or rolling by itself) that runs into you
+        // pushes you out of its way.
+        void PushedByScooters(float dt)
+        {
+            if (m_Ride != null || m_Seat != null || !m_Controller.enabled) return;
+            Vector3 me = transform.position;
+            foreach (var scooter in Multiplayer.Scooters)
+            {
+                if (scooter == null || Mathf.Abs(scooter.Speed) < 0.3f) continue;
+                Vector3 apart = me - scooter.transform.position;
+                apart.y = 0f;
+                float gap = scooter.footprintRadius + m_Controller.radius;
+                float distance = apart.magnitude;
+                if (distance >= gap) continue;
+                Vector3 dir = distance > 0.001f ? apart / distance : scooter.transform.right;
+                m_Controller.Move(dir * (gap - distance + 0.01f));
+                // A shove, carried on for a moment by your own momentum.
+                Vector3 kick = dir * Mathf.Abs(scooter.Speed) * 0.7f;
+                m_Velocity = new Vector3(kick.x, m_Velocity.y, kick.z);
+            }
         }
 
         // ---------- Cursor and hints ----------
@@ -859,6 +977,7 @@ namespace GlassRoom
                 }
                 else if (m_Seat != null) m_Hud.SetKeyHints((Click, "to stand up"));
                 else if (target is Seat) m_Hud.SetKeyHints((Click, "to sit"));
+                else if (target is MarkerBoard) m_Hud.SetKeyHints((Click, "to write or draw"));
                 else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
                 else m_Hud.SetKeyHints();
@@ -877,9 +996,9 @@ namespace GlassRoom
             m_Hud.SetTutorial(0f);
             // You can't jump on the scooter or from a chair, so the Jump button goes away then;
             // and seated, there's no walking either, so the joystick goes too.
-            m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null);
+            m_Hud.SetJumpVisible(m_Ride == null && m_Seat == null && !menu);
             m_Hud.SetSprintVisible(m_Ride == null && m_Seat == null && !menu);
-            m_Hud.SetJoystickVisible(m_Seat == null);
+            m_Hud.SetJoystickVisible(m_Seat == null && !menu);
             if (menu) { m_Hud.SetContextButtons(); return; }
             if (m_Ride != null) { m_Hud.SetContextButtons(("Unmount", StepOff)); return; }
             if (m_Seat != null) { m_Hud.SetContextButtons(("Stand up", StandUp)); return; }
@@ -889,6 +1008,8 @@ namespace GlassRoom
                 m_Hud.SetContextButtons(("Mount", () => StepOn(scooter)));
             else if (near is Seat seat)
                 m_Hud.SetContextButtons(("Sit", () => SitDown(seat)));
+            else if (near is MarkerBoard nearBoard && nearBoard.InFront(transform.position) && !MarkerBoard.LocalBusy)
+                m_Hud.SetContextButtons(("Board", () => BoardPanel.Instance.Open()));
             else if (near is MusicSpeaker speaker)
             {
                 if (speaker.IsOn) m_Hud.SetContextButtons(("Play / Pause", speaker.TogglePlayPause), ("Skip", speaker.Skip));
@@ -899,6 +1020,23 @@ namespace GlassRoom
         }
 
         // The closest scooter or speaker that's within reach and on screen, for the phone buttons.
+        /// <summary>Testing: what's nearby and why it is or isn't offered.</summary>
+        public string DebugNear()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var thing in m_Interactables)
+            {
+                if (thing == null) continue;
+                bool reachable = false;
+                foreach (var c in thing.GetComponentsInChildren<Collider>()) if (WithinReach(c)) { reachable = true; break; }
+                Vector3 view = m_Camera.WorldToViewportPoint(Centre(thing));
+                if (reachable || thing is MarkerBoard) sb.Append(thing.name + " reach " + reachable + " view " + view.ToString("F2") + "; ");
+            }
+            var near = NearbyInView();
+            sb.Append(" nearest " + (near != null ? near.name : "none"));
+            return sb.ToString();
+        }
+
         Component NearbyInView()
         {
             Component best = null;

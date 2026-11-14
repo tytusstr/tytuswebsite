@@ -31,6 +31,23 @@ mergeInto(LibraryManager.library, {
     if (typeof window.editName === "function") window.editName();
   },
 
+  // A new name from the settings (remembered for next time; empty forgets it).
+  WebPage_SetPlayerName: function (namePtr) {
+    var name = UTF8ToString(namePtr);
+    window.playerName = name;
+    try { if (name) localStorage.setItem("glassRoomName", name); else localStorage.removeItem("glassRoomName"); } catch (e) {}
+  },
+
+  // 1 on a phone or tablet.
+  WebPage_IsMobile: function () {
+    return (typeof window.isMobileDevice === "function" && window.isMobileDevice()) ? 1 : 0;
+  },
+
+  // The game has stopped for this player: a message and a Reload button over everything.
+  WebPage_ShowGone: function (messagePtr) {
+    if (typeof window.showGone === "function") window.showGone(UTF8ToString(messagePtr));
+  },
+
   // The name typed on the Enter screen.
   WebPage_PlayerName: function () {
     var name = String(window.playerName || "");

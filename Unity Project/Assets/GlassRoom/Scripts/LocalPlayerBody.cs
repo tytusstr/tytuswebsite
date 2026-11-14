@@ -93,9 +93,13 @@ namespace GlassRoom
             if (m_Avatar == null) return;
             var seat = m_Player.CurrentSeat;
             PlayerAvatar.Placement(transform.position, m_Player.BodyYaw, seat, m_Player.CurrentRide, out var feet, out var yaw);
+            m_Avatar.Move(m_Player.LocalMotion);
             m_Avatar.Pose(feet, yaw, m_Player.GroundSpeed, seat != null, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             m_Avatar.Look(m_Player.HeadYaw, m_Player.HeadPitch);
             m_Avatar.Hold(m_Player.CurrentRide);
+            var board = MarkerBoard.Instance;
+            if (board != null && board.ActiveAuthor == MarkerBoard.LocalAuthor) m_Avatar.UseBoard(board.PenPoint, board.Facing, board.ActiveTool, board.PenColor);
+            else m_Avatar.UseBoard(Vector3.zero, Vector3.zero, MarkerBoard.Tool.None, Color.black);
             ShowSelf(seat != null);
         }
 
@@ -111,11 +115,21 @@ namespace GlassRoom
                 if (m != null) m.SetFloat("_Cutoff", show ? 1.01f : 0.5f);
         }
 
-        // Sitting, the view is from your body's eyes (after the body has been posed this frame).
+        // Sitting, the view is from your body's eyes: just above the neck, a little forward
+        // (after the body has been posed this frame). The neck doesn't move as you look around,
+        // and the point is smoothed, so the view stays still.
+        Vector3 m_SeatedEye;
+        bool m_HasSeatedEye;
+
         void BeforeRender(ScriptableRenderContext context, Camera camera)
         {
-            if (!m_ShowingSelf || camera != m_Camera || m_Avatar == null || m_Avatar.Head == null) return;
-            camera.transform.position = m_Avatar.Head.position + camera.transform.rotation * new Vector3(0f, 0.07f, 0.1f);
+            if (camera != m_Camera) return;
+            if (!m_ShowingSelf || m_Avatar == null || m_Avatar.Neck == null) { m_HasSeatedEye = false; return; }
+            var root = m_Avatar.transform;
+            Vector3 eye = m_Avatar.Neck.position + root.up * 0.17f + Quaternion.Euler(0f, root.eulerAngles.y, 0f) * Vector3.forward * 0.13f;
+            m_SeatedEye = m_HasSeatedEye ? Vector3.Lerp(m_SeatedEye, eye, 1f - Mathf.Exp(-6f * Time.deltaTime)) : eye;
+            m_HasSeatedEye = true;
+            camera.transform.position = m_SeatedEye;
         }
 
         void OnDestroy()

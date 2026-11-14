@@ -17,7 +17,7 @@ namespace GlassRoom
         public string sessionName = "glass-room";
         public int maxPlayers = 100;
         /// <summary>Bump whenever NetworkPlayer's shared data changes.</summary>
-        public const int NetworkVersion = 3;
+        public const int NetworkVersion = 4;
 
         public static Multiplayer Instance { get; private set; }
         /// <summary>Everyone in the room, you included.</summary>
@@ -67,6 +67,7 @@ namespace GlassRoom
                 if (!WebPage.Entered || playerPrefab == null) { if (playerPrefab == null && WebPage.Entered) MarkReady(); return; }
                 m_Started = true;
                 m_EnteredAt = Time.unscaledTime;
+                m_LastInput = Time.unscaledTime;
                 Connect();
                 return;
             }
@@ -79,20 +80,41 @@ namespace GlassRoom
                     || Time.unscaledTime - m_EnteredAt > JoinTimeout)
                     MarkReady();
             }
-            // Dropped (a browser pauses a page that's in the background, and the connection
-            // times out): rejoin a few seconds after coming back.
-            if (m_Runner != null && !m_Runner.IsRunning && m_RetryAt < 0f && !m_Connecting)
-                m_RetryAt = Time.unscaledTime + 3f;
-            if (m_RetryAt >= 0f && Time.unscaledTime >= m_RetryAt)
-            {
-                m_RetryAt = -1f;
-                if (m_Runner != null) Destroy(m_Runner.gameObject);
-                m_Runner = null;
-                Connect();
-            }
+            // No rejoining in the background: someone who's been away 5 minutes, or whose
+            // connection dropped (a browser pauses a page that's out of sight, and the room lets
+            // them go), is stopped and has to reload. That way nobody ends up playing on in a room
+            // of their own that looks shared but isn't.
+            if (m_Gone) return;
+            if (AnyInput()) m_LastInput = Time.unscaledTime;
+            if (m_Ready && Time.unscaledTime - m_LastInput > IdleLimit)
+                Leave("You were away for 5 minutes, so you've left the room.");
+            else if (m_JoinedAt >= 0f && m_Runner != null && !m_Runner.IsRunning && !m_Connecting)
+                Leave("You've been disconnected.");
         }
 
         bool m_Connecting;
+        bool m_Gone;
+        float m_LastInput;
+        const float IdleLimit = 300f;
+
+        // Any key, mouse movement or click, or touch counts as playing.
+        static bool AnyInput()
+        {
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            if (keyboard != null && keyboard.anyKey.isPressed) return true;
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse != null && (mouse.delta.ReadValue().sqrMagnitude > 0f || mouse.leftButton.isPressed)) return true;
+            var touch = UnityEngine.InputSystem.Touchscreen.current;
+            if (touch != null && touch.primaryTouch.press.isPressed) return true;
+            return false;
+        }
+
+        void Leave(string message)
+        {
+            m_Gone = true;
+            if (m_Runner != null && m_Runner.IsRunning) m_Runner.Shutdown();
+            WebPage.ShowGone(message + " Reload to play again.");
+        }
 
         void MarkReady()
         {
@@ -132,7 +154,6 @@ namespace GlassRoom
                 Debug.LogWarning("Multiplayer: couldn't connect: " + e.Message);
                 m_Connecting = false;
                 MarkReady();
-                m_RetryAt = Time.unscaledTime + 10f;
                 return;
             }
             m_Connecting = false;
@@ -140,7 +161,6 @@ namespace GlassRoom
             {
                 Debug.LogWarning("Multiplayer: couldn't join: " + result.ShutdownReason);
                 MarkReady();
-                m_RetryAt = Time.unscaledTime + 10f;
                 return;
             }
             var me = FindAnyObjectByType<FirstPersonController>();
@@ -191,7 +211,19 @@ namespace GlassRoom
             var radio = FindAnyObjectByType<MusicSpeaker>();
             var a = what.Split(' ');
             var inv = System.Globalization.CultureInfo.InvariantCulture;
-            if (a[0] == "radio" && radio != null) radio.TogglePlayPause();
+            var board = MarkerBoard.Instance;
+            if (a[0] == "mode") InputModeManager.Mode = a.Length > 1 && a[1] == "mobile" ? ControlMode.Touchscreen : ControlMode.KeyboardMouse;
+            else if (a[0] == "write" && board != null) board.Write(what.Substring(6), new Rect(60f, 280f, 520f, 160f), 1);
+            else if (a[0] == "draw" && board != null)
+            {
+                var line = new List<Vector2>();
+                for (int i = 0; i <= 60; i++) line.Add(new Vector2(600f + i * 6f, 200f + Mathf.Sin(i * 0.25f) * 90f));
+                board.Draw(new List<List<Vector2>> { line }, 2, 1);
+            }
+            else if (a[0] == "erase" && board != null) board.EraseAll();
+            else if (a[0] == "panel" && BoardPanel.Instance != null) BoardPanel.Instance.Open();
+            else if (a[0] == "near" && me != null) Debug.Log("Multiplayer near: " + me.DebugNear());
+            else if (a[0] == "radio" && radio != null) radio.TogglePlayPause();
             else if (a[0] == "skip" && radio != null) radio.Skip();
             else if (a[0] == "tp" && me != null) me.Teleport(new Vector3(float.Parse(a[1], inv), 0.05f, float.Parse(a[2], inv)), float.Parse(a[3], inv));
             else if (me != null) me.TestAct(a[0]);

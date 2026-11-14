@@ -12,15 +12,22 @@ namespace GlassRoom
     /// </summary>
     public class ControlsHUD : MonoBehaviour
     {
-        // Plain, neutral palette: charcoal for the selected state, light grey otherwise.
-        static readonly Color k_Ink = new Color(0.11f, 0.11f, 0.12f, 1f);
-        static readonly Color k_Muted = new Color(0.45f, 0.45f, 0.47f, 1f);
-        static readonly Color k_Accent = k_Ink;
-        static readonly Color k_Idle = new Color(0.92f, 0.92f, 0.93f, 1f);
+        // Dark, slightly see-through settings card: light text, white for the chosen option
+        // (with dark lettering), faint white for the rest.
+        static readonly Color k_Ink = new Color(0.94f, 0.94f, 0.96f, 1f);
+        static readonly Color k_Muted = new Color(0.62f, 0.63f, 0.67f, 1f);
+        static readonly Color k_Accent = new Color(0.97f, 0.97f, 0.98f, 1f);
+        static readonly Color k_Idle = new Color(1f, 1f, 1f, 0.09f);
+        static readonly Color k_OnAccent = new Color(0.08f, 0.08f, 0.1f, 1f);
+        static readonly Color k_Card = new Color(0.06f, 0.065f, 0.075f, 0.86f);
 
         public VirtualJoystick Joystick { get; private set; }
         public TouchLookPad LookPad { get; private set; }
-        public bool IsMenuOpen => m_Menu != null && m_Menu.activeSelf;
+        public bool IsMenuOpen => (m_Menu != null && m_Menu.activeSelf) || BoardPanel.IsOpen;
+
+        /// <summary>True while the settings or the board panel are open (anywhere).</summary>
+        public static bool AnyMenuOpen => s_Instance != null && s_Instance.IsMenuOpen;
+        static ControlsHUD s_Instance;
 
         bool m_JumpRequested;
         GameObject m_JumpButton, m_SprintButton;
@@ -75,8 +82,13 @@ namespace GlassRoom
         RectTransform m_Card, m_Lower;
         Text m_FovValue;
         Slider m_FovSlider;
-        const float CardHeight = 1090f, MouseRowHeight = 80f;
-        Text m_CharacterValue, m_NameValue;
+        const float CardWidth = 1180f, CardHeight = 760f;
+        Text m_CharacterValue, m_NameStatus, m_HelpText, m_Online;
+        InputField m_NameField;
+        GameObject[] m_Pages;
+        Image[] m_TabBgs;
+        Text[] m_TabTexts;
+        int m_Tab;
         CanvasGroup m_HintGroup;
         // Phone buttons in the bottom-right corner, and computer key hints along the bottom.
         readonly GameObject[] m_ContextButtons = new GameObject[2];
@@ -106,6 +118,7 @@ namespace GlassRoom
 
         void Awake()
         {
+            s_Instance = this;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             EnsureEventSystem();
             Build();
@@ -127,12 +140,13 @@ namespace GlassRoom
             if (IsMenuOpen)
             {
                 m_FrameRate.text = Mathf.RoundToInt(1f / m_SmoothedFrameTime) + " fps";
-                string name = WebPage.PlayerName;
-                m_NameValue.text = string.IsNullOrEmpty(name) ? "Add a name" : name;
                 ShowCharacter();
                 FitCard();
             }
             FitSafeArea();
+            // How many people are here, snug in the top-right corner.
+            int online = Multiplayer.PlayerCount;
+            m_Online.text = online > 0 ? online + " online" : "";
         }
 
         // Keeps the controls inside the part of the screen that's actually usable: the whole
@@ -160,9 +174,8 @@ namespace GlassRoom
         // The settings card shrinks to fit short screens (it's tall in computer mode).
         void FitCard()
         {
-            float available = ((RectTransform)transform).rect.height - 40f;
-            float height = m_Card.sizeDelta.y;
-            float scale = height > 0f ? Mathf.Min(1f, available / height) : 1f;
+            var screen = ((RectTransform)transform).rect;
+            float scale = Mathf.Min(1f, (screen.height - 40f) / CardHeight, (screen.width - 30f) / CardWidth);
             if (!Mathf.Approximately(m_Card.localScale.x, scale)) m_Card.localScale = Vector3.one * scale;
         }
 
@@ -183,12 +196,27 @@ namespace GlassRoom
             }
         }
 
-        // The first-moments tutorial: one "[key] what it does" line per bar, stacked at the bottom.
+        // The first-moments tutorial: "[key] what it does" lines one under the other, their left
+        // edges lined up, the block centred at the bottom of the screen.
         readonly List<(GameObject bar, Text key, Text label, CanvasGroup group)> m_TutorialLines = new List<(GameObject, Text, Text, CanvasGroup)>();
+        RectTransform m_TutorialBlock;
 
         /// <summary>Computer: tutorial lines one under the other at the bottom (none hides them), faded by opacity.</summary>
         public void SetTutorial(float opacity, params (string key, string label)[] lines)
         {
+            if (m_TutorialBlock == null)
+            {
+                m_TutorialBlock = NewRect("Tutorial", m_SafeArea, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
+                m_TutorialBlock.pivot = new Vector2(0.5f, 0f);
+                m_TutorialBlock.anchoredPosition = new Vector2(0f, 30f);
+                var layout = m_TutorialBlock.gameObject.AddComponent<VerticalLayoutGroup>();
+                layout.spacing = 10f;
+                layout.childAlignment = TextAnchor.LowerLeft;
+                layout.childControlWidth = layout.childControlHeight = true;
+                layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+                var fit = m_TutorialBlock.gameObject.AddComponent<ContentSizeFitter>();
+                fit.horizontalFit = fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            }
             while (m_TutorialLines.Count < lines.Length) m_TutorialLines.Add(BuildTutorialLine());
             for (int i = 0; i < m_TutorialLines.Count; i++)
             {
@@ -199,31 +227,30 @@ namespace GlassRoom
                 line.key.text = lines[i].key;
                 line.label.text = lines[i].label;
                 line.group.alpha = opacity;
-                // First line on top.
-                ((RectTransform)line.bar.transform).anchoredPosition = new Vector2(0f, 30f + (lines.Length - 1 - i) * 62f);
             }
         }
 
         (GameObject, Text, Text, CanvasGroup) BuildTutorialLine()
         {
-            var bar = NewRect("Tutorial Line", m_SafeArea, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
-            bar.pivot = new Vector2(0.5f, 0f);
+            var bar = NewRect("Tutorial Line", m_TutorialBlock, Vector2.zero, Vector2.zero);
             AddImage(bar.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.22f), UISprites.RoundedPanel, false, 26f);
             var layout = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
             layout.padding = new RectOffset(10, 22, 8, 8);
-            layout.spacing = 10f;
-            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 12f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
             layout.childControlWidth = layout.childControlHeight = true;
             layout.childForceExpandWidth = layout.childForceExpandHeight = false;
-            var fit = bar.gameObject.AddComponent<ContentSizeFitter>();
-            fit.horizontalFit = fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             var cap = NewRect("Key", bar, Vector2.zero, Vector2.zero);
             AddImage(cap.gameObject, new Color(1f, 1f, 1f, 0.16f), UISprites.RoundedPanel, false, 8f);
+            // Every key the same width, so the words after them line up too.
+            cap.gameObject.AddComponent<LayoutElement>().minWidth = 96f;
             var capLayout = cap.gameObject.AddComponent<HorizontalLayoutGroup>();
             capLayout.padding = new RectOffset(10, 10, 5, 5);
+            capLayout.childAlignment = TextAnchor.MiddleCenter;
             capLayout.childControlWidth = capLayout.childControlHeight = true;
             var key = NewRect("Text", cap, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
             StyleText(key, 22, Color.white, FontStyle.Bold);
+            key.alignment = TextAnchor.MiddleCenter;
             var label = NewRect("Label", bar, Vector2.zero, Vector2.zero).gameObject.AddComponent<Text>();
             StyleText(label, 24, Color.white, FontStyle.Normal);
             var group = bar.gameObject.AddComponent<CanvasGroup>();
@@ -250,8 +277,28 @@ namespace GlassRoom
             }
         }
 
-        public void SetMenuOpen(bool open) => m_Menu.SetActive(open);
-        public void ToggleMenu() => SetMenuOpen(!IsMenuOpen);
+        public void SetMenuOpen(bool open)
+        {
+            m_Menu.SetActive(open);
+            if (open)
+            {
+                if (m_NameField != null && !m_NameField.isFocused) m_NameField.text = WebPage.PlayerName;
+                if (m_NameStatus != null) m_NameStatus.text = "";
+            }
+            else if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        /// <summary>Opens the settings on the Help page.</summary>
+        public void OpenHelp()
+        {
+            SetMenuOpen(true);
+            ShowTab(3);
+        }
+        public void ToggleMenu()
+        {
+            if (BoardPanel.IsOpen) { BoardPanel.Instance.Close(); return; }
+            SetMenuOpen(!(m_Menu != null && m_Menu.activeSelf));
+        }
 
         /// <summary>Shows the centre plus; it grows slightly when it's over something clickable.</summary>
         public void SetCrosshair(bool visible, bool overClickable)
@@ -279,14 +326,13 @@ namespace GlassRoom
             bool phone = mode == ControlMode.Touchscreen;
             m_TouchControls.SetActive(phone);
             m_ComputerButtonBg.color = phone ? k_Idle : k_Accent;
-            m_ComputerButtonText.color = phone ? k_Ink : Color.white;
+            m_ComputerButtonText.color = phone ? k_Ink : k_OnAccent;
             m_PhoneButtonBg.color = phone ? k_Accent : k_Idle;
-            m_PhoneButtonText.color = phone ? Color.white : k_Ink;
+            m_PhoneButtonText.color = phone ? k_OnAccent : k_Ink;
             PointerPicture.Apply(!phone);
             m_MouseRow.SetActive(!phone);
             m_QNote.SetActive(!phone);
-            m_Lower.anchoredPosition = new Vector2(0f, phone ? 0f : -MouseRowHeight);
-            m_Card.sizeDelta = new Vector2(m_Card.sizeDelta.x, phone ? CardHeight : CardHeight + MouseRowHeight);
+            if (m_HelpText != null) m_HelpText.text = HelpText(phone);
             // Each mode has its own sensitivity range, so the number changes with the mode.
             m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
             // Each mode has its own field of view, so the slider moves to this mode's.
@@ -438,6 +484,8 @@ namespace GlassRoom
             m_Menu.SetActive(false);
 
             BuildMenuButton(root);
+            ChatBox.Create(root, m_Font);
+            BoardPanel.Create(canvasRect, m_Font);
             m_FakeCursor = gameObject.AddComponent<FakeCursor>();
             m_FakeCursor.Build(canvasRect);
         }
@@ -456,6 +504,25 @@ namespace GlassRoom
             b.colors = colors;
             b.onClick.AddListener(ToggleMenu);
 
+            // A small "?" beside it opens the help, and the number of people here sits snug in the corner.
+            var help = NewRect("Help Button", root, Vector2.one, Vector2.one);
+            help.sizeDelta = new Vector2(108f, 56f);
+            help.anchoredPosition = new Vector2(-188f, -70f);
+            var helpBg = AddImage(help.gameObject, new Color(0.06f, 0.07f, 0.09f, 0.62f), UISprites.RoundedPanel, true, 28f);
+            var hb = help.gameObject.AddComponent<Button>();
+            hb.targetGraphic = helpBg;
+            hb.onClick.AddListener(OpenHelp);
+            AddText(help, "Help", 26, Color.white, FontStyle.Bold);
+            var online = NewRect("Online", root, Vector2.one, Vector2.one);
+            online.pivot = new Vector2(1f, 1f);
+            online.sizeDelta = new Vector2(220f, 30f);
+            online.anchoredPosition = new Vector2(-24f, -122f);
+            m_Online = AddText(online, "", 20, Color.white, FontStyle.Bold);
+            m_Online.alignment = TextAnchor.UpperRight;
+            var outline = m_Online.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.55f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
             for (int i = -1; i <= 1; i++)
             {
                 var line = NewRect("Line", button, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
@@ -471,110 +538,247 @@ namespace GlassRoom
             var menu = NewRect("Settings Menu", root, Vector2.zero, Vector2.one);
 
             // Tapping outside the card closes the menu.
-            var dim = AddImage(menu.gameObject, new Color(0f, 0f, 0f, 0.3f));
+            var dim = AddImage(menu.gameObject, new Color(0f, 0f, 0f, 0.25f));
             var dimButton = menu.gameObject.AddComponent<Button>();
             dimButton.transition = Selectable.Transition.None;
             dimButton.targetGraphic = dim;
             dimButton.onClick.AddListener(() => SetMenuOpen(false));
 
             var card = NewRect("Card", menu, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            card.sizeDelta = new Vector2(620f, CardHeight);
+            card.sizeDelta = new Vector2(CardWidth, CardHeight);
             m_Card = card;
-            AddImage(card.gameObject, new Color(0.98f, 0.98f, 0.98f, 0.97f), UISprites.RoundedPanel, true, 20f);
+            AddImage(card.gameObject, k_Card, UISprites.RoundedPanel, true, 12f);
             // Clicks on the card itself (between controls, or letting go of a slider) stop here
             // instead of reaching the backdrop behind it, which closes the menu.
             card.gameObject.AddComponent<ClickCatcher>();
 
-            Label(card, "Settings", 36, k_Ink, -58f, FontStyle.Bold);
-            m_FrameRate = Label(card, "", 20, k_Muted, -36f);
+            var title = Corner(card, "Settings", 34, k_Ink, new Vector2(36f, -30f), FontStyle.Bold);
+            title.alignment = TextAnchor.UpperLeft;
+            m_FrameRate = Corner(card, "", 20, k_Muted, new Vector2(-30f, -36f));
             m_FrameRate.alignment = TextAnchor.UpperRight;
-            m_FrameRate.rectTransform.offsetMax = new Vector2(-28f, m_FrameRate.rectTransform.offsetMax.y);
+            m_FrameRate.rectTransform.anchorMin = m_FrameRate.rectTransform.anchorMax = new Vector2(1f, 1f);
+            m_FrameRate.rectTransform.pivot = new Vector2(1f, 1f);
 
-            Label(card, "Controls", 24, k_Muted, -118f);
-            (m_ComputerButtonBg, m_ComputerButtonText) = AddChoice(card, "Computer", new Vector2(-128f, -178f),
-                () => InputModeManager.Mode = ControlMode.KeyboardMouse);
-            (m_PhoneButtonBg, m_PhoneButtonText) = AddChoice(card, "Phone", new Vector2(128f, -178f),
-                () => InputModeManager.Mode = ControlMode.Touchscreen);
+            // Left: you, turnable, with arrows to change who you are.
+            var stage = NewRect("Character", card, new Vector2(0f, 1f), new Vector2(0f, 1f));
+            stage.pivot = new Vector2(0f, 1f);
+            stage.anchoredPosition = new Vector2(30f, -96f);
+            stage.sizeDelta = new Vector2(340f, 520f);
+            AddImage(stage.gameObject, new Color(1f, 1f, 1f, 0.05f), UISprites.RoundedPanel, false, 10f);
+            var picture = NewRect("Picture", stage, Vector2.zero, Vector2.one);
+            CharacterPreview.Create(picture);
+            var turnHint = AddText(NewRect("Hint", stage, new Vector2(0f, 0f), new Vector2(1f, 0f)), "Drag to turn", 20, k_Muted);
+            turnHint.rectTransform.sizeDelta = new Vector2(0f, 40f);
+            turnHint.rectTransform.anchoredPosition = new Vector2(0f, 26f);
+            var pick = NewRect("Character Row", card, new Vector2(0f, 1f), new Vector2(0f, 1f));
+            pick.pivot = new Vector2(0f, 1f);
+            pick.anchoredPosition = new Vector2(30f, -630f);
+            pick.sizeDelta = new Vector2(340f, 60f);
+            m_CharacterValue = AddText(pick, "", 26, k_Ink, FontStyle.Bold);
+            SmallButton(pick, "<", new Vector2(0f, 0f), () => ChangeCharacter(-1), new Vector2(0f, 0.5f));
+            SmallButton(pick, ">", new Vector2(0f, 0f), () => ChangeCharacter(1), new Vector2(1f, 0.5f));
 
-            // Computer mode only: right under the Controls choice; the rest moves down for it.
-            m_MouseRow = AddSwitch(card, -258f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
-            // Computer mode only: a small reminder in the top-left corner.
-            var qNote = Label(card, "Press Q to open/close", 20, k_Muted, -36f);
-            qNote.alignment = TextAnchor.UpperLeft;
-            qNote.rectTransform.offsetMin = new Vector2(28f, qNote.rectTransform.offsetMin.y);
+            // Right: tabs and their pages.
+            string[] tabs = { "Controls", "Display", "Player", "Help" };
+            m_Pages = new GameObject[tabs.Length];
+            m_TabBgs = new Image[tabs.Length];
+            m_TabTexts = new Text[tabs.Length];
+            for (int i = 0; i < tabs.Length; i++)
+            {
+                int index = i;
+                var tab = NewRect(tabs[i] + " Tab", card, new Vector2(0f, 1f), new Vector2(0f, 1f));
+                tab.pivot = new Vector2(0f, 1f);
+                tab.anchoredPosition = new Vector2(400f + i * 186f, -96f);
+                tab.sizeDelta = new Vector2(176f, 60f);
+                m_TabBgs[i] = AddImage(tab.gameObject, k_Idle, UISprites.RoundedPanel, true, 10f);
+                var b = tab.gameObject.AddComponent<Button>();
+                b.targetGraphic = m_TabBgs[i];
+                b.onClick.AddListener(() => ShowTab(index));
+                m_TabTexts[i] = AddText(tab, tabs[i], 26, k_Ink, FontStyle.Bold);
+
+                var page = NewRect(tabs[i] + " Page", card, new Vector2(0f, 1f), new Vector2(0f, 1f));
+                page.pivot = new Vector2(0f, 1f);
+                page.anchoredPosition = new Vector2(400f, -176f);
+                page.sizeDelta = new Vector2(750f, 470f);
+                m_Pages[i] = page.gameObject;
+            }
+            BuildControlsPage((RectTransform)m_Pages[0].transform);
+            BuildDisplayPage((RectTransform)m_Pages[1].transform);
+            BuildPlayerPage((RectTransform)m_Pages[2].transform);
+            BuildHelpPage((RectTransform)m_Pages[3].transform);
+            ShowTab(0);
+
+            // Computer: a small reminder in the bottom-left of the tabs.
+            var qNote = Corner(card, "Press Q to open/close", 20, k_Muted, new Vector2(400f, 0f));
+            qNote.rectTransform.anchorMin = qNote.rectTransform.anchorMax = new Vector2(0f, 0f);
+            qNote.rectTransform.pivot = new Vector2(0f, 0f);
+            qNote.rectTransform.anchoredPosition = new Vector2(400f, 50f);
+            qNote.alignment = TextAnchor.LowerLeft;
             m_QNote = qNote.gameObject;
 
-            var lower = NewRect("Lower Settings", card, new Vector2(0f, 1f), new Vector2(1f, 1f));
-            m_Lower = lower;
+            var done = NewRect("Done", card, new Vector2(1f, 0f), new Vector2(1f, 0f));
+            done.pivot = new Vector2(1f, 0f);
+            done.sizeDelta = new Vector2(260f, 70f);
+            done.anchoredPosition = new Vector2(-30f, 30f);
+            var doneBg = AddImage(done.gameObject, k_Accent, UISprites.RoundedPanel, true, 10f);
+            var doneButton = done.gameObject.AddComponent<Button>();
+            doneButton.targetGraphic = doneBg;
+            doneButton.onClick.AddListener(() => SetMenuOpen(false));
+            AddText(done, "Done", 28, k_OnAccent, FontStyle.Bold);
 
-            Label(lower, "Look sensitivity", 24, k_Muted, -262f);
-            m_SensitivityValue = Label(lower, "", 26, k_Ink, -350f, FontStyle.Bold);
-            AddSlider(lower, -308f, "Sensitivity Slider", () => LookSettings.SliderPosition, v =>
+            ShowCharacter();
+            return menu.gameObject;
+        }
+
+        void BuildControlsPage(RectTransform page)
+        {
+            Label(page, "Controls", 24, k_Muted, -10f);
+            (m_ComputerButtonBg, m_ComputerButtonText) = AddChoice(page, "Computer", new Vector2(-128f, -85f),
+                () => InputModeManager.Mode = ControlMode.KeyboardMouse);
+            (m_PhoneButtonBg, m_PhoneButtonText) = AddChoice(page, "Mobile", new Vector2(128f, -85f),
+                () => InputModeManager.Mode = ControlMode.Touchscreen);
+            m_MouseRow = AddSwitch(page, -175f, "Mouse?", () => MouseSettings.Enabled, on => MouseSettings.Enabled = on);
+
+            Label(page, "Look sensitivity", 24, k_Muted, -235f);
+            m_SensitivityValue = Label(page, "", 26, k_Ink, -315f, FontStyle.Bold);
+            AddSlider(page, -277f, "Sensitivity Slider", () => LookSettings.SliderPosition, v =>
             {
                 LookSettings.SliderPosition = v;
                 m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
             });
             m_SensitivityValue.text = LookSettings.Sensitivity.ToString("0.0") + "×";
 
-            Label(lower, "Field of view", 24, k_Muted, -418f);
-            m_FovValue = Label(lower, "", 26, k_Ink, -506f, FontStyle.Bold);
-            m_FovSlider = AddSlider(lower, -464f, "Field Of View Slider", () => FovSettings.SliderPosition, v =>
+            Label(page, "Field of view", 24, k_Muted, -360f);
+            m_FovValue = Label(page, "", 26, k_Ink, -440f, FontStyle.Bold);
+            m_FovSlider = AddSlider(page, -402f, "Field Of View Slider", () => FovSettings.SliderPosition, v =>
             {
                 FovSettings.SliderPosition = v;
                 m_FovValue.text = Mathf.RoundToInt(FovSettings.FieldOfView) + "°";
             });
             m_FovValue.text = Mathf.RoundToInt(FovSettings.FieldOfView) + "°";
-
-            Label(lower, "Graphics", 24, k_Muted, -574f);
-            (m_FullButtonBg, m_FullButtonText) = AddChoice(lower, "Full", new Vector2(-128f, -634f), () => SetGraphics(false));
-            (m_LowButtonBg, m_LowButtonText) = AddChoice(lower, "Low", new Vector2(128f, -634f), () => SetGraphics(true));
-            ShowGraphics(GraphicsQuality.Low);
-
-            // Two switches side by side: key hints, and other players' names above their heads.
-            AddSwitch(lower, -724f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on, -135f, 230f);
-            AddSwitch(lower, -724f, "Names", () => NameSettings.Enabled, on => NameSettings.Enabled = on, 135f, 230f);
-
-            // Which person you are (remembered), and your name (opens the name box).
-            var character = NewRect("Character Row", lower, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
-            character.sizeDelta = new Vector2(500f, 60f);
-            character.anchoredPosition = new Vector2(0f, -804f);
-            AddText(character, "Character", 26, k_Ink, FontStyle.Bold).alignment = TextAnchor.MiddleLeft;
-            m_CharacterValue = AddText(character, "", 24, k_Ink, FontStyle.Bold);
-            m_CharacterValue.alignment = TextAnchor.MiddleRight;
-            m_CharacterValue.rectTransform.offsetMax = new Vector2(-78f, 0f);
-            SmallButton(character, "<", new Vector2(-196f, 0f), () => ChangeCharacter(-1));
-            SmallButton(character, ">", new Vector2(-28f, 0f), () => ChangeCharacter(1));
-
-            var nameRow = NewRect("Name Row", lower, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
-            nameRow.sizeDelta = new Vector2(500f, 60f);
-            nameRow.anchoredPosition = new Vector2(0f, -884f);
-            AddText(nameRow, "Name", 26, k_Ink, FontStyle.Bold).alignment = TextAnchor.MiddleLeft;
-            var nameButton = NewRect("Name Button", nameRow, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f));
-            nameButton.sizeDelta = new Vector2(260f, 56f);
-            nameButton.anchoredPosition = new Vector2(-130f, 0f);
-            var nameBg = AddImage(nameButton.gameObject, k_Idle, UISprites.RoundedPanel, true, 14f);
-            var nb = nameButton.gameObject.AddComponent<Button>();
-            nb.targetGraphic = nameBg;
-            nb.onClick.AddListener(WebPage.EditName);
-            m_NameValue = AddText(nameButton, "", 24, k_Ink, FontStyle.Bold);
-            ShowCharacter();
-
-            var done = NewRect("Done", card, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));
-            done.sizeDelta = new Vector2(500f, 84f);
-            done.anchoredPosition = new Vector2(0f, 72f);
-            var doneBg = AddImage(done.gameObject, k_Ink, UISprites.RoundedPanel, true, 14f);
-            var doneButton = done.gameObject.AddComponent<Button>();
-            doneButton.targetGraphic = doneBg;
-            doneButton.onClick.AddListener(() => SetMenuOpen(false));
-            AddText(done, "Done", 30, Color.white, FontStyle.Bold);
-
-            return menu.gameObject;
         }
 
-        void SmallButton(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction action)
+        void BuildDisplayPage(RectTransform page)
         {
-            var rect = NewRect(label + " Button", parent, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f));
-            rect.sizeDelta = new Vector2(56f, 56f);
+            Label(page, "Graphics", 24, k_Muted, -10f);
+            (m_FullButtonBg, m_FullButtonText) = AddChoice(page, "Full", new Vector2(-128f, -85f), () => SetGraphics(false));
+            (m_LowButtonBg, m_LowButtonText) = AddChoice(page, "Low", new Vector2(128f, -85f), () => SetGraphics(true));
+            ShowGraphics(GraphicsQuality.Low);
+            AddSwitch(page, -200f, "Hints", () => HintSettings.Enabled, on => HintSettings.Enabled = on);
+            AddSwitch(page, -275f, "Names above heads", () => NameSettings.Enabled, on => NameSettings.Enabled = on);
+            AddSwitch(page, -350f, "Chat", () => ChatSettings.Enabled, on => ChatSettings.Enabled = on);
+        }
+
+        void BuildPlayerPage(RectTransform page)
+        {
+            Label(page, "Your name", 24, k_Muted, -10f);
+            var box = NewRect("Name Box", page, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            box.sizeDelta = new Vector2(500f, 72f);
+            box.anchoredPosition = new Vector2(0f, -90f);
+            AddImage(box.gameObject, k_Idle, UISprites.RoundedPanel, true, 10f);
+            var text = AddText(box, "", 28, k_Ink);
+            text.rectTransform.offsetMin = new Vector2(20f, 0f);
+            text.rectTransform.offsetMax = new Vector2(-20f, 0f);
+            text.alignment = TextAnchor.MiddleCenter;
+            text.supportRichText = false;
+            var hint = AddText(box, "Type a name", 28, new Color(1f, 1f, 1f, 0.35f));
+            m_NameField = box.gameObject.AddComponent<InputField>();
+            m_NameField.textComponent = text;
+            m_NameField.placeholder = hint;
+            m_NameField.characterLimit = 20;
+            m_NameField.lineType = InputField.LineType.SingleLine;
+            m_NameField.onEndEdit.AddListener(_ =>
+            {
+                var keyboard = UnityEngine.InputSystem.Keyboard.current;
+                if (keyboard != null && keyboard.enterKey.wasPressedThisFrame) SaveName();
+            });
+
+            var save = NewRect("Save", page, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            save.sizeDelta = new Vector2(240f, 70f);
+            save.anchoredPosition = new Vector2(0f, -185f);
+            var saveBg = AddImage(save.gameObject, k_Accent, UISprites.RoundedPanel, true, 10f);
+            var saveButton = save.gameObject.AddComponent<Button>();
+            saveButton.targetGraphic = saveBg;
+            saveButton.onClick.AddListener(SaveName);
+            AddText(save, "Save", 28, k_OnAccent, FontStyle.Bold);
+            m_NameStatus = Label(page, "", 22, k_Muted, -250f);
+            var note = Label(page, "Shown above your head to everyone. Up to 20 letters.\nLeave it empty to play without a name.", 22, k_Muted, -330f);
+            note.rectTransform.sizeDelta = new Vector2(0f, 80f);
+        }
+
+        void SaveName()
+        {
+            string name = m_NameField.text.Trim();
+            if (name.Length > 20) name = name.Substring(0, 20);
+            WebPage.SetPlayerName(name);
+            m_NameField.text = name;
+            m_NameStatus.text = name.Length > 0 ? "Saved" : "Name removed";
+            if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        void BuildHelpPage(RectTransform page)
+        {
+            var area = NewRect("Help Text", page, Vector2.zero, Vector2.one);
+            area.offsetMin = new Vector2(10f, 0f);
+            area.offsetMax = new Vector2(-10f, -6f);
+            m_HelpText = AddText(area, "", 22, k_Ink);
+            m_HelpText.alignment = TextAnchor.UpperLeft;
+            m_HelpText.supportRichText = true;
+            m_HelpText.lineSpacing = 1.05f;
+            m_HelpText.text = HelpText(InputModeManager.Mode == ControlMode.Touchscreen);
+        }
+
+        static string HelpText(bool mobile)
+        {
+            string controls = mobile
+                ? "<b>Controls</b>\n" +
+                  "Left stick: walk          Drag on the right: look around\n" +
+                  "Jump / Sprint buttons: jump, sprint (tap Sprint again to walk)\n" +
+                  "Buttons appear near things you can use: sit, ride, radio, board\n" +
+                  "Chat button (top left): send a message\n"
+                : "<b>Keys</b>\n" +
+                  "W A S D / arrows: walk          Mouse: look around\n" +
+                  "Double tap W, or hold Shift: sprint          Space: jump\n" +
+                  "Click: sit, ride, play / pause the radio, use the board\n" +
+                  "Right click or N (at the radio): next song          E: get off the scooter\n" +
+                  "Enter: chat          Q: settings\n";
+            return controls + "\n" +
+                   "<b>Why is it slow?</b>\n" +
+                   "- Low power mode (battery saver) slows the browser down: turn it off.\n" +
+                   "- A slow or patchy internet connection makes other people jump around.\n" +
+                   "- Try Graphics: Low (Display tab).\n" +
+                   "- Close other tabs and apps.";
+        }
+
+        void ShowTab(int index)
+        {
+            m_Tab = index;
+            for (int i = 0; i < m_Pages.Length; i++)
+            {
+                bool on = i == index;
+                m_Pages[i].SetActive(on);
+                m_TabBgs[i].color = on ? k_Accent : k_Idle;
+                m_TabTexts[i].color = on ? k_OnAccent : k_Ink;
+            }
+            if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        // Text placed at a corner of the card.
+        Text Corner(RectTransform parent, string value, int size, Color color, Vector2 position, FontStyle style = FontStyle.Normal)
+        {
+            var rect = NewRect(value + " Text", parent, new Vector2(0f, 1f), new Vector2(0f, 1f));
+            rect.pivot = new Vector2(0f, 1f);
+            rect.sizeDelta = new Vector2(400f, 50f);
+            rect.anchoredPosition = position;
+            var text = AddText(rect, value, size, color, style);
+            return text;
+        }
+
+        void SmallButton(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction action, Vector2 anchor)
+        {
+            var rect = NewRect(label + " Button", parent, anchor, anchor);
+            rect.pivot = anchor;
+            rect.sizeDelta = new Vector2(60f, 60f);
             rect.anchoredPosition = position;
             var bg = AddImage(rect.gameObject, k_Idle, UISprites.Circle, true);
             var b = rect.gameObject.AddComponent<Button>();
@@ -608,9 +812,9 @@ namespace GlassRoom
         void ShowGraphics(bool low)
         {
             m_FullButtonBg.color = low ? k_Idle : k_Accent;
-            m_FullButtonText.color = low ? k_Ink : Color.white;
+            m_FullButtonText.color = low ? k_Ink : k_OnAccent;
             m_LowButtonBg.color = low ? k_Accent : k_Idle;
-            m_LowButtonText.color = low ? Color.white : k_Ink;
+            m_LowButtonText.color = low ? k_OnAccent : k_Ink;
         }
 
         (Image, Text) AddChoice(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction onClick)
@@ -618,12 +822,12 @@ namespace GlassRoom
             var rect = NewRect(label, parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
             rect.sizeDelta = new Vector2(240f, 80f);
             rect.anchoredPosition = position;
-            var bg = AddImage(rect.gameObject, k_Idle, UISprites.RoundedPanel, true, 14f);
+            var bg = AddImage(rect.gameObject, k_Idle, UISprites.RoundedPanel, true, 10f);
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = bg;
             var colors = button.colors;
-            colors.highlightedColor = new Color(0.94f, 0.94f, 0.94f, 1f);
-            colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+            colors.highlightedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            colors.pressedColor = new Color(0.75f, 0.75f, 0.75f, 1f);
             button.colors = colors;
             button.onClick.AddListener(onClick);
             return (bg, AddText(rect, label, 30, k_Ink, FontStyle.Bold));
@@ -638,13 +842,13 @@ namespace GlassRoom
 
             var track = NewRect("Track", area, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f));
             track.sizeDelta = new Vector2(0f, 8f);
-            AddImage(track.gameObject, new Color(0.85f, 0.85f, 0.86f, 1f), UISprites.RoundedPanel, true, 4f);
+            AddImage(track.gameObject, new Color(1f, 1f, 1f, 0.18f), UISprites.RoundedPanel, true, 4f);
 
             var fillArea = NewRect("Fill Area", area, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f));
             fillArea.sizeDelta = new Vector2(-22f, 8f);
             var fill = NewRect("Fill", fillArea, Vector2.zero, Vector2.one);
             fill.sizeDelta = new Vector2(22f, 0f);
-            AddImage(fill.gameObject, new Color(0.3f, 0.3f, 0.32f, 1f), UISprites.RoundedPanel, false, 4f);
+            AddImage(fill.gameObject, new Color(1f, 1f, 1f, 0.8f), UISprites.RoundedPanel, false, 4f);
 
             var handleArea = NewRect("Handle Area", area, Vector2.zero, Vector2.one);
             handleArea.sizeDelta = new Vector2(-22f, 0f);
@@ -684,11 +888,12 @@ namespace GlassRoom
             var trackImage = AddImage(track.gameObject, k_Idle, UISprites.RoundedPanel, true, 25f);
             var knob = NewRect("Knob", track, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f));
             knob.sizeDelta = new Vector2(40f, 40f);
-            AddImage(knob.gameObject, Color.white, UISprites.Circle, false);
+            var knobImage = AddImage(knob.gameObject, Color.white, UISprites.Circle, false);
 
             void Show(bool on)
             {
-                trackImage.color = on ? k_Ink : new Color(0.82f, 0.82f, 0.83f, 1f);
+                trackImage.color = on ? k_Accent : new Color(1f, 1f, 1f, 0.16f);
+                knobImage.color = on ? k_OnAccent : Color.white;
                 knob.anchoredPosition = new Vector2(on ? 67f : 25f, 0f);
             }
 

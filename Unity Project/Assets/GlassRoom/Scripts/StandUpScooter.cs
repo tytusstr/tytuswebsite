@@ -45,6 +45,33 @@ namespace GlassRoom
         [Range(0f, 1f)] public float humVolume = 0.125f;
         public AudioClip stepOnClip;
         public AudioClip stepOffClip;
+        [Tooltip("Running into something fast.")]
+        public AudioClip crashClip;
+
+        /// <summary>Losing more speed than this (m/s) all at once is a crash.</summary>
+        public const float CrashSpeed = 2.5f;
+        float m_LastCrash = -10f;
+
+        /// <summary>A crash: a bump, louder the harder it was (others hear it too).</summary>
+        public void Crash(float speedLost, bool share = true)
+        {
+            if (crashClip == null || Time.time - m_LastCrash < 0.5f) return;
+            m_LastCrash = Time.time;
+            float loudness = Mathf.Lerp(0.45f, 1f, Mathf.InverseLerp(CrashSpeed, maxSpeed, speedLost));
+            m_Effects.volume = 1f;
+            m_Effects.pitch = Random.Range(0.92f, 1.06f);
+            m_Effects.PlayOneShot(crashClip, loudness);
+            if (share) SharedSounds.Raise(SharedSound.ScooterCrash, Multiplayer.ScooterIndex(this), transform.position, loudness);
+        }
+
+        /// <summary>Pushed by another scooter: moved over, and set rolling at this speed.</summary>
+        public void Shove(Vector3 by, float speed)
+        {
+            transform.position += new Vector3(by.x, 0f, by.z);
+            Vector3 dir = by.sqrMagnitude > 0.000001f ? by.normalized : transform.forward;
+            float along = Vector3.Dot(dir, transform.forward) * speed;
+            if (Mathf.Abs(along) > Mathf.Abs(m_Speed)) m_Speed = along;
+        }
 
         AudioSource m_Motor, m_Effects;
 
@@ -126,6 +153,9 @@ namespace GlassRoom
                              Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
                 {
                     if (hit.transform.IsChildOf(transform)) continue;
+                    // People aren't walls: a rolling scooter pushes them (they move themselves).
+                    if (hit.collider is CharacterController || hit.transform.GetComponentInParent<PlayerAvatar>() != null) continue;
+                    if (Mathf.Abs(m_Speed) > CrashSpeed) Crash(Mathf.Abs(m_Speed));
                     m_Speed = 0f;
                     return;
                 }
@@ -206,7 +236,7 @@ namespace GlassRoom
 
         Transform m_LeftGrip, m_RightGrip;
 
-        /// <summary>Where a rider's wrist goes on the handlebar: side -1 left, +1 right.</summary>
+        /// <summary>The middle of a handlebar grip: side -1 left, +1 right.</summary>
         public Vector3 GripPoint(int side)
         {
             if (m_LeftGrip == null || m_RightGrip == null)
@@ -219,8 +249,7 @@ namespace GlassRoom
             }
             var grip = side < 0 ? m_LeftGrip : m_RightGrip;
             Vector3 p = grip != null ? grip.position : transform.TransformPoint(new Vector3(0.193f * side, 1.031f, 0.122f));
-            // The wrist sits behind the bar and a little above it, with the palm on top of it.
-            return p - transform.forward * 0.06f + Vector3.up * 0.055f;
+            return p;
         }
 
         /// <summary>This player has the scooter again (they've stepped on it).</summary>

@@ -23,13 +23,17 @@ namespace GlassRoom
         const float HeadTurnLimit = 100f, HeadTiltLimit = 70f;
 
         Animator m_Animator;
-        Transform m_Spine, m_Neck, m_Head, m_LClavicle, m_RClavicle;
+        Transform m_Spine, m_Neck, m_Head, m_LClavicle, m_RClavicle, m_Pelvis, m_LowerSpine;
+        Vector2 m_Motion;
+        float m_HipTwist;
         Transform m_LUpper, m_LFore, m_LHand, m_RUpper, m_RFore, m_RHand;
         // Finger bones, per hand: [finger 0-4][segment 0-2]; finger 0 is the thumb.
         readonly Transform[,] m_LFingers = new Transform[5, 3], m_RFingers = new Transform[5, 3];
 
         /// <summary>The head bone (for the name above it).</summary>
         public Transform Head => m_Head;
+        /// <summary>The neck bone (steady while the head turns; the seated view follows it).</summary>
+        public Transform Neck => m_Neck;
 
         float m_HeadYaw, m_HeadPitch, m_TargetHeadYaw, m_TargetHeadPitch;
         StandUpScooter m_Ride;
@@ -43,6 +47,8 @@ namespace GlassRoom
                 switch (t.name)
                 {
                     case "Bip01 Spine2": m_Spine = t; break;
+                    case "Bip01 Pelvis": m_Pelvis = t; break;
+                    case "Bip01 Spine": m_LowerSpine = t; break;
                     case "Bip01 Neck": m_Neck = t; break;
                     case "Bip01 Head": m_Head = t; break;
                     case "Bip01 L Clavicle": m_LClavicle = t; break;
@@ -81,9 +87,14 @@ namespace GlassRoom
             }
             else transform.SetPositionAndRotation(feet, Quaternion.Euler(0f, yaw, 0f));
             if (m_Animator == null) return;
-            m_Animator.SetFloat(k_Speed, speed, 0.12f, Mathf.Max(dt, 0.0001f));
+            // Walking backwards plays the walk in reverse (negative speed in the animations).
+            bool backwards = m_Motion.y < -0.1f && -m_Motion.y > Mathf.Abs(m_Motion.x) * 0.6f;
+            m_Animator.SetFloat(k_Speed, backwards ? -speed : speed, 0.12f, Mathf.Max(dt, 0.0001f));
             m_Animator.SetBool(k_Seated, seated);
         }
+
+        /// <summary>How they're moving relative to their body: x sideways (right +), y forward (m/s).</summary>
+        public void Move(Vector2 motion) => m_Motion = motion;
 
         /// <summary>Where the head looks, relative to the body (degrees): turn (right +) and tilt (down +).</summary>
         public void Look(float headYaw, float headPitch, bool snap = false)
@@ -91,6 +102,22 @@ namespace GlassRoom
             m_TargetHeadYaw = Mathf.Clamp(headYaw, -HeadTurnLimit, HeadTurnLimit);
             m_TargetHeadPitch = Mathf.Clamp(headPitch, -HeadTiltLimit, HeadTiltLimit);
             if (snap) { m_HeadYaw = m_TargetHeadYaw; m_HeadPitch = m_TargetHeadPitch; }
+        }
+
+        // The marker board: the right hand holds a marker (or the eraser) against the board.
+        MarkerBoard.Tool m_Tool;
+        Vector3 m_ToolPoint, m_ToolNormal;
+        Color m_ToolColor;
+        Transform m_Marker, m_Eraser;
+        Renderer m_MarkerCap;
+
+        /// <summary>Writing, drawing or wiping on the board: where the tip is, which way the board faces, and with what.</summary>
+        public void UseBoard(Vector3 point, Vector3 boardFacing, MarkerBoard.Tool tool, Color color)
+        {
+            m_Tool = tool;
+            m_ToolPoint = point;
+            m_ToolNormal = boardFacing;
+            m_ToolColor = color;
         }
 
         /// <summary>The scooter being ridden (the hands hold its grips), or null.</summary>
@@ -102,8 +129,116 @@ namespace GlassRoom
             float k = 1f - Mathf.Exp(-14f * Time.deltaTime);
             m_HeadYaw = Mathf.Lerp(m_HeadYaw, m_TargetHeadYaw, k);
             m_HeadPitch = Mathf.Lerp(m_HeadPitch, m_TargetHeadPitch, k);
+            TwistHips();
             TurnHead();
             if (m_Ride != null) HoldGrips(m_Ride);
+            UseTool();
+        }
+
+        void UseTool()
+        {
+            if (m_Tool == MarkerBoard.Tool.None)
+            {
+                if (m_Marker != null && m_Marker.gameObject.activeSelf) m_Marker.gameObject.SetActive(false);
+                if (m_Eraser != null && m_Eraser.gameObject.activeSelf) m_Eraser.gameObject.SetActive(false);
+                return;
+            }
+            EnsureTools();
+            Vector3 n = m_ToolNormal.sqrMagnitude > 0.01f ? m_ToolNormal.normalized : -transform.forward;
+            Vector3 boardRight = Vector3.Cross(Vector3.up, n);
+            bool marker = m_Tool == MarkerBoard.Tool.Marker;
+            m_Marker.gameObject.SetActive(marker);
+            m_Eraser.gameObject.SetActive(!marker);
+            Vector3 handAt;
+            if (marker)
+            {
+                // A marker pointing at the board, its tip on the line being drawn.
+                m_Marker.position = m_ToolPoint + n * 0.07f;
+                m_Marker.rotation = Quaternion.FromToRotation(Vector3.up, n);
+                if (m_MarkerCap != null) m_MarkerCap.material.color = m_ToolColor;
+                handAt = m_ToolPoint + n * 0.12f + Vector3.down * 0.02f;
+            }
+            else
+            {
+                // The eraser flat against the board, the hand on its back.
+                m_Eraser.position = m_ToolPoint + n * 0.022f;
+                m_Eraser.rotation = Quaternion.LookRotation(-n, Vector3.up);
+                handAt = m_ToolPoint + n * 0.07f;
+            }
+            Reach(m_RUpper, m_RFore, m_RHand, handAt, Vector3.down * 0.4f - n * 0.1f + boardRight * 0.1f);
+            if (m_RFore == null || m_RHand == null) return;
+            // The hand closed round it, knuckles towards the board.
+            Vector3 along = (m_RHand.position - m_RFore.position).normalized;
+            Vector3 fingersDir = Vector3.Slerp(along, -n, 0.5f).normalized;
+            m_RHand.rotation = Quaternion.FromToRotation(-m_RHand.right, fingersDir) * m_RHand.rotation;
+            Vector3 want = Vector3.ProjectOnPlane(-boardRight, fingersDir).normalized;
+            float twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(m_RHand.up, fingersDir), want, fingersDir);
+            m_RFore.rotation = Quaternion.AngleAxis(twist * 0.5f, along) * m_RFore.rotation;
+            twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(m_RHand.up, fingersDir), want, fingersDir);
+            m_RHand.rotation = Quaternion.AngleAxis(twist, fingersDir) * m_RHand.rotation;
+            for (int f = 1; f < 5; f++)
+            {
+                Curl(m_RFingers[f, 0], Vector3.forward, -80f);
+                Curl(m_RFingers[f, 1], Vector3.forward, -85f);
+                Curl(m_RFingers[f, 2], Vector3.forward, -60f);
+            }
+            Curl(m_RFingers[0, 0], Vector3.up, 30f);
+            Curl(m_RFingers[0, 1], Vector3.forward, -35f);
+        }
+
+        // A felt-tip marker and a board eraser, made once and kept hidden until needed.
+        void EnsureTools()
+        {
+            if (m_Marker != null) return;
+            int layer = gameObject.layer;
+            m_Marker = new GameObject("Marker").transform;
+            var body = Part(m_Marker, PrimitiveType.Cylinder, new Vector3(0.016f, 0.055f, 0.016f), Vector3.zero, new Color(0.92f, 0.92f, 0.9f), layer);
+            m_MarkerCap = Part(m_Marker, PrimitiveType.Cylinder, new Vector3(0.017f, 0.02f, 0.017f), new Vector3(0f, -0.05f, 0f), Color.black, layer);
+            Part(m_Marker, PrimitiveType.Cylinder, new Vector3(0.007f, 0.012f, 0.007f), new Vector3(0f, -0.075f, 0f), new Color(0.15f, 0.15f, 0.15f), layer);
+            m_Eraser = new GameObject("Eraser").transform;
+            Part(m_Eraser, PrimitiveType.Cube, new Vector3(0.13f, 0.055f, 0.022f), new Vector3(0f, 0f, 0.011f), new Color(0.2f, 0.2f, 0.22f), layer);
+            Part(m_Eraser, PrimitiveType.Cube, new Vector3(0.13f, 0.055f, 0.02f), new Vector3(0f, 0f, -0.01f), new Color(0.55f, 0.4f, 0.25f), layer);
+            m_Marker.gameObject.SetActive(false);
+            m_Eraser.gameObject.SetActive(false);
+        }
+
+        static Renderer Part(Transform parent, PrimitiveType type, Vector3 scale, Vector3 at, Color color, int layer)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            Destroy(go.GetComponent<Collider>());
+            go.layer = layer;
+            go.transform.SetParent(parent, false);
+            go.transform.localScale = scale;
+            go.transform.localPosition = at;
+            var r = go.GetComponent<Renderer>();
+            r.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            r.material.color = color;
+            r.material.SetFloat("_Smoothness", 0.4f);
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return r;
+        }
+
+        void OnDestroy()
+        {
+            if (m_Marker != null) Destroy(m_Marker.gameObject);
+            if (m_Eraser != null) Destroy(m_Eraser.gameObject);
+        }
+
+        // Stepping sideways: the hips and legs turn towards the way they're going (up to 75°) while
+        // the upper body keeps facing forward, so the legs walk sideways under a still chest.
+        void TwistHips()
+        {
+            float target = 0f;
+            if (m_Motion.magnitude > 0.3f && m_Pelvis != null && m_LowerSpine != null)
+            {
+                float forwardSign = m_Motion.y < -0.1f ? -1f : 1f;
+                target = Mathf.Clamp(Mathf.Atan2(m_Motion.x * forwardSign, Mathf.Abs(m_Motion.y)) * Mathf.Rad2Deg, -75f, 75f);
+            }
+            m_HipTwist = Mathf.MoveTowards(m_HipTwist, target, 300f * Time.deltaTime);
+            if (Mathf.Abs(m_HipTwist) < 0.1f || m_Pelvis == null || m_LowerSpine == null) return;
+            Vector3 up = transform.up;
+            m_Pelvis.rotation = Quaternion.AngleAxis(m_HipTwist, up) * m_Pelvis.rotation;
+            m_LowerSpine.rotation = Quaternion.AngleAxis(-m_HipTwist, up) * m_LowerSpine.rotation;
         }
 
         // The turn is shared out: a little in the upper back, more in the neck, most in the head.
@@ -133,34 +268,45 @@ namespace GlassRoom
 
         void HoldGrips(StandUpScooter scooter)
         {
-            Vector3 left = scooter.GripPoint(-1), right = scooter.GripPoint(1);
-            Vector3 forward = scooter.transform.forward, back = -forward, down = Vector3.down;
-            Reach(m_LUpper, m_LFore, m_LHand, left, -scooter.transform.right * 0.35f + back * 0.25f + down * 0.3f);
-            Reach(m_RUpper, m_RFore, m_RHand, right, scooter.transform.right * 0.35f + back * 0.25f + down * 0.3f);
-            // An overhand grip: palm down on the bar, knuckles pointing forward, fingers and thumb
-            // closed round it.
-            Grip(m_LHand, m_LFingers, forward, -1f);
-            Grip(m_RHand, m_RFingers, forward, 1f);
+            HoldOne(m_LUpper, m_LFore, m_LHand, m_LFingers, scooter.GripPoint(-1), scooter, -1f);
+            HoldOne(m_RUpper, m_RFore, m_RHand, m_RFingers, scooter.GripPoint(1), scooter, 1f);
         }
 
-        // In these hands the fingers point along the hand's -X, the palm faces its +Y, fingers
-        // close by turning about their own -Z, and the thumb about -Y (left) or +Y (right).
-        static void Grip(Transform hand, Transform[,] fingers, Vector3 forward, float side)
+        // One hand on its grip: the wrist just behind the bar along the line of the arm, the hand
+        // carrying straight on from the forearm with the palm resting on top of the bar, and the
+        // fingers wrapped over it. The turn of the wrist is shared with the forearm, the way a
+        // real arm turns, so the wrist never looks twisted or pinched. Elbows hang down and back.
+        // (In these hands the fingers point along the hand's -X, the palm faces its +Y, fingers
+        // close by turning about their own -Z, and the thumb about -Y left or +Y right.)
+        static void HoldOne(Transform upper, Transform fore, Transform hand, Transform[,] fingers, Vector3 grip, StandUpScooter scooter, float side)
         {
-            if (hand == null) return;
-            Vector3 fingersDir = (forward - Vector3.up * 0.25f).normalized;
-            Vector3 palm = Vector3.ProjectOnPlane(Vector3.down + forward * 0.15f, fingersDir).normalized;
-            Vector3 x = -fingersDir, y = palm, z = Vector3.Cross(x, y);
-            hand.rotation = Quaternion.LookRotation(z, y);
+            if (upper == null || fore == null || hand == null) return;
+            Vector3 forward = scooter.transform.forward;
+            Vector3 arm = (grip - upper.position).normalized;
+            Vector3 wrist = grip - arm * 0.07f + Vector3.up * 0.03f;
+            Reach(upper, fore, hand, wrist, -forward * 0.3f + Vector3.down * 0.3f + scooter.transform.right * side * 0.06f);
+
+            // Straight on from the forearm, dipping slightly onto the bar.
+            Vector3 along = (hand.position - fore.position).normalized;
+            Vector3 toBar = (grip - hand.position).normalized;
+            Vector3 fingersDir = Vector3.Slerp(along, toBar, 0.4f).normalized;
+            hand.rotation = Quaternion.FromToRotation(-hand.right, fingersDir) * hand.rotation;
+            // Palm down: half of the turn in the forearm, the rest in the hand.
+            Vector3 want = Vector3.ProjectOnPlane(Vector3.down, fingersDir).normalized;
+            float twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(hand.up, fingersDir), want, fingersDir);
+            fore.rotation = Quaternion.AngleAxis(twist * 0.5f, along) * fore.rotation;
+            twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(hand.up, fingersDir), want, fingersDir);
+            hand.rotation = Quaternion.AngleAxis(twist, fingersDir) * hand.rotation;
+
             for (int f = 1; f < 5; f++)
             {
-                Curl(fingers[f, 0], Vector3.forward, -75f);
-                Curl(fingers[f, 1], Vector3.forward, -80f);
-                Curl(fingers[f, 2], Vector3.forward, -55f);
+                Curl(fingers[f, 0], Vector3.forward, -55f);
+                Curl(fingers[f, 1], Vector3.forward, -65f);
+                Curl(fingers[f, 2], Vector3.forward, -45f);
             }
-            Curl(fingers[0, 0], Vector3.up, 30f * side);
-            Curl(fingers[0, 1], Vector3.forward, -30f);
-            Curl(fingers[0, 2], Vector3.forward, -35f);
+            Curl(fingers[0, 0], Vector3.up, 25f * side);
+            Curl(fingers[0, 1], Vector3.forward, -25f);
+            Curl(fingers[0, 2], Vector3.forward, -30f);
         }
 
         static void Curl(Transform bone, Vector3 localAxis, float degrees)

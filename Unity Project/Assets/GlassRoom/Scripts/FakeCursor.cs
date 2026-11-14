@@ -135,6 +135,12 @@ namespace GlassRoom
 
             if (mouse.leftButton.wasReleasedThisFrame)
                 Release(target);
+
+            // A text box chosen with this pointer still gets the typing (the real pointer's
+            // input handling, which normally passes it on, is switched off meanwhile).
+            var selected = EventSystem.current.currentSelectedGameObject;
+            if (selected != null)
+                ExecuteEvents.Execute(selected, new BaseEventData(EventSystem.current), ExecuteEvents.updateSelectedHandler);
         }
 
         // Ends a press: lifts the button, and clicks it if the pointer is still on it.

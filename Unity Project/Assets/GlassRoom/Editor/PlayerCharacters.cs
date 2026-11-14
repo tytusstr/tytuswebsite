@@ -20,13 +20,14 @@ namespace GlassRoom.Editor
         static readonly string[] k_People =
         {
             "Male_Adult_01", "Female_Adult_08", "Male_Adult_08", "Female_Adult_17", "Male_Adult_12",
-            "Female_Adult_04", "Male_Adult_17", "Female_Adult_12", "Male_Adult_04", "Male_Adult_16",
+            "Female_Adult_04", "Male_Adult_17", "Female_Adult_12", "Male_Adult_04", "Male_Adult_16", "Male_Adult_19",
         };
 
         [MenuItem("Tools/Glass Room/Set Up Player Characters")]
         public static void SetUp()
         {
             EnsureLayer(LocalPlayerBody.LayerName);
+            EnsureLayer("Preview"); // the person shown in the settings (CharacterPreview)
             // Men move with the men's recordings, women with the women's.
             var male = BuildController("m", "Male_Adult_01", "Player");
             var female = BuildController("f", "Female_Adult_04", "Player Female");
@@ -117,14 +118,17 @@ namespace GlassRoom.Editor
             // Each clip at the speed (m/s) it was recorded moving, played a little faster or
             // slower to match the game's speeds so the feet don't slide: walk 1.0, jog 2.9 and
             // sprint 5.8 m/s in the recordings; the game walks at 2.1 and sprints at 4.5.
+            // Walking backwards: the walk played in reverse (negative speeds).
+            tree.AddChild(walk, -2.1f);
             tree.AddChild(idle, 0f);
             tree.AddChild(walk, 1.3f);
             tree.AddChild(run, 2.9f);
             tree.AddChild(sprint, 4.5f);
             var children = tree.children;
-            children[1].timeScale = 1.3f / 1.01f;
-            children[2].timeScale = 1f;
-            children[3].timeScale = 0.85f;
+            children[0].timeScale = -1.7f;
+            children[2].timeScale = 1.3f / 1.01f;
+            children[3].timeScale = 1f;
+            children[4].timeScale = 0.85f;
             tree.children = children;
             sm.defaultState = move;
 
@@ -215,9 +219,17 @@ namespace GlassRoom.Editor
         // The character's own textures: body, head, and (eyelashes etc.) see-through parts.
         static Material CharacterMaterial(string dir, string person, string original)
         {
-            string part = original.Contains("head") ? "head" : original.Contains("opacity") ? "opacity" : "body";
             string code = null;
             foreach (var f in Directory.GetFiles(dir, "*_body_color.png")) code = Path.GetFileName(f).Replace("_body_color.png", "");
+            // Each part has its own textures: body, head, see-through bits (opacity), and extras
+            // like a headscarf ("keffiyeh"), named after the material.
+            string lower = original.ToLowerInvariant();
+            string part = lower.Contains("head") ? "head" : lower.Contains("opacity") ? "opacity" : "body";
+            foreach (var f in Directory.GetFiles(dir, code + "_*_color.png"))
+            {
+                string candidate = Path.GetFileName(f).Substring(code.Length + 1).Replace("_color.png", "");
+                if (candidate != "body" && candidate != "head" && candidate != "opacity" && lower.Contains(candidate)) part = candidate;
+            }
             string matPath = $"Assets/GlassRoom/Materials/Player {person} {part}.mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
             if (mat == null) { mat = new Material(Shader.Find("Universal Render Pipeline/Lit")); AssetDatabase.CreateAsset(mat, matPath); }

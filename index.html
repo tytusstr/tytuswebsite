@@ -54,8 +54,9 @@
       width: 179px; box-sizing: border-box; padding: 14px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.35);
       background: transparent; color: rgba(255,255,255,0.92); text-align: center; outline: none;
       /* The same lettering as ENTER: small spaced capitals. */
-      font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.4em; text-transform: uppercase;
+      font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.12em;
       -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; caret-color: #fff; }
+    #name::placeholder { text-transform: uppercase; letter-spacing: 0.4em; }
     #name::placeholder, #editInput::placeholder { color: rgba(255,255,255,0.38); }
     #name.hidden { display: none; }
     /* Changing your name later (Settings > Name): the same box and button over the game. */
@@ -73,14 +74,29 @@
     #name:focus { border-color: rgba(255,255,255,0.75); }
     #name:focus::placeholder { color: transparent; }
     /* Pressed: waits (gently pulsing) while the game joins the room. */
-    #enter.joining { animation: joining 1s ease-in-out infinite; pointer-events: none; }
-    @keyframes joining { 50% { opacity: 0.45; } }
+    #enter.joining { pointer-events: none; }
+    /* Joining the room: three dots under the button, lighting up in turn. */
+    #dots { display: flex; gap: 9px; height: 6px; opacity: 0; transition: opacity 0.3s ease; }
+    #dots.on { opacity: 1; }
+    #dots i { width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: 0.2; animation: dot 1.2s ease-in-out infinite; }
+    #dots i:nth-child(2) { animation-delay: 0.2s; } #dots i:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dot { 30% { opacity: 0.95; } 60% { opacity: 0.2; } }
+    /* Kicked out (5 minutes without playing) or disconnected: reload to play again. */
+    #gone { position: fixed; inset: 0; display: none; place-items: center; background: rgba(0,0,0,0.86); z-index: 20; color: rgba(255,255,255,0.9);
+      font: 500 13px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; text-align: center; }
+    #gone.open { display: grid; }
+    #gone .col { display: flex; flex-direction: column; align-items: center; gap: 22px; max-width: 320px; padding: 0 20px; }
+    #reload { font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: 0.6em; text-indent: 0.6em;
+      text-transform: uppercase; color: rgba(255,255,255,0.9); background: transparent; border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 10px; padding: 16px 0; width: 179px; cursor: pointer; }
+    #reload:hover { color: #000; background: #fff; border-color: #fff; }
   </style>
 </head>
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
-  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button></div></div>
-  <div id="nameEdit"><div class="col"><input id="editInput" type="text" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
+  <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
+  <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
+  <div id="nameEdit"><div class="col"><input id="editInput" type="text" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
     // Browsers refuse to capture the mouse pointer until the player has clicked. The game asks
     // again on the first click, so a refusal is harmless; catch it here so Safari doesn't show
@@ -256,12 +272,13 @@
     function enterGame() {
       if (!ready || entered) return;
       entered = true;
-      var typed = nameBox.value.replace(/\s+/g, " ").trim().slice(0, 16);
+      var typed = nameBox.value.replace(/\s+/g, " ").trim().slice(0, 20);
       window.playerName = typed || savedName || "";
       if (typed) { try { localStorage.setItem("glassRoomName", typed); } catch (e) {} }
       nameBox.blur();
       nameBox.disabled = true;
       enter.classList.add("joining");
+      document.getElementById("dots").classList.add("on");
       if (window.gamePointer.computer) capturePointer();
       window.gameEntered = true;
       setTimeout(window.revealGame, 15000);
@@ -276,7 +293,7 @@
     };
     function closeNameEdit(save) {
       if (save) {
-        var typed = editInput.value.replace(/\s+/g, " ").trim().slice(0, 16);
+        var typed = editInput.value.replace(/\s+/g, " ").trim().slice(0, 20);
         window.playerName = typed;
         try { if (typed) localStorage.setItem("glassRoomName", typed); else localStorage.removeItem("glassRoomName"); } catch (e) {}
       }
@@ -296,6 +313,20 @@
         if (type === "keydown" && e.key === "Escape") { e.preventDefault(); closeNameEdit(false); }
       }, { capture: true, passive: false });
     });
+    // The game stopped for you (idle too long, or the connection dropped): reload to come back.
+    window.showGone = function (message) {
+      if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
+      document.getElementById("goneText").textContent = message;
+      document.getElementById("gone").classList.add("open");
+      if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.pause(); } catch (e) {}
+    };
+    // Phone or tablet (a finger is the main pointer), for picking the controls the first time.
+    window.isMobileDevice = function () {
+      var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      var ua = navigator.userAgent || "";
+      var iPadAsMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      return coarse || /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || iPadAsMac;
+    };
     window.revealGame = function () {
       if (!window.gameCovered) return;
       window.gameCovered = false;
