@@ -58,6 +58,33 @@
     window.addEventListener("pagehide", function () { checkIn("left"); });
     window.addEventListener("pageshow", function (e) { if (e.persisted) checkIn("playing"); });
 
+    // Phones: the game holds every picture it has drawn, at screen sharpness, and every sound
+    // ready to play; at a phone's 3x sharpness that outgrows what Safari allows a page within a
+    // minute or so and the page crashes. So on phones it draws at 1x and keeps sounds at half
+    // the sample rate (much less memory, little difference to see or hear on a phone).
+    var phone = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent);
+    if (phone) {
+      try { Object.defineProperty(window, "devicePixelRatio", { get: function () { return 1; }, configurable: true }); } catch (e) {}
+      var BaseAudio = window.AudioContext || window.webkitAudioContext;
+      if (BaseAudio) {
+        var SmallAudio = function () {
+          try { return new BaseAudio({ sampleRate: 22050 }); } catch (e) { return new BaseAudio(); }
+        };
+        SmallAudio.prototype = BaseAudio.prototype;
+        window.AudioContext = SmallAudio;
+        window.webkitAudioContext = SmallAudio;
+      }
+    }
+    // Sound plays even with the iPhone's silent switch on (like a video), and starts on the
+    // first tap or key (browsers keep a page quiet until then).
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+    function wakeSound() {
+      try { var ctx = vm.runtime.audioEngine.audioContext; if (ctx.state !== "running") ctx.resume(); } catch (e) {}
+    }
+    ["touchstart", "touchend", "pointerdown", "keydown", "click"].forEach(function (type) {
+      document.addEventListener(type, wakeSound, { capture: true, passive: true });
+    });
+
     var scaffolding = new Scaffolding.Scaffolding();
     scaffolding.width = 480;
     scaffolding.height = 360;
@@ -74,7 +101,7 @@
 
     // The project's own TurboWarp settings (frame rate, high quality pen, ...), as turbowarp.org applies them.
     function applySettings() {
-      vm.renderer.setUseHighQualityRender(true);
+      vm.renderer.setUseHighQualityRender(!phone);
       var stage = vm.runtime.getTargetForStage();
       var comments = stage && stage.comments ? Object.values(stage.comments) : [];
       for (var i = 0; i < comments.length; i++) {
@@ -87,7 +114,7 @@
           if (typeof c.turbo === "boolean") vm.setTurboMode(c.turbo);
           if (typeof c.interpolation === "boolean") vm.setInterpolation(c.interpolation);
           if (c.runtimeOptions) vm.setRuntimeOptions(c.runtimeOptions);
-          if (typeof c.hq === "boolean") vm.renderer.setUseHighQualityRender(c.hq);
+          if (typeof c.hq === "boolean") vm.renderer.setUseHighQualityRender(c.hq && !phone);
         } catch (e) {}
       }
     }
