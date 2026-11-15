@@ -24,7 +24,8 @@ namespace GlassRoom
         public static readonly List<NetworkPlayer> Players = new List<NetworkPlayer>();
         /// <summary>You (once connected).</summary>
         public static NetworkPlayer Local { get; internal set; }
-        public static int PlayerCount => Players.Count;
+        // (Including people who went to play Among Us from the wall button; see AwayPlayers.)
+        public static int PlayerCount => Players.Count + AwayPlayers.Count;
 
         NetworkRunner m_Runner;
         bool m_Started;

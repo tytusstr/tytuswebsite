@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
   <title>Among Us</title>
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none;
@@ -14,11 +16,15 @@
     #wait div { display: flex; gap: 9px; }
     #wait i { width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: 0.2; animation: dot 1.2s ease-in-out infinite; }
     #wait i:nth-child(2) { animation-delay: 0.2s; } #wait i:nth-child(3) { animation-delay: 0.4s; }
+    #back { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); z-index: 6;
+      width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(40,40,44,0.75); color: #fff; font-size: 20px; line-height: 40px;
+      text-align: center; cursor: pointer; padding: 0; text-decoration: none; -webkit-tap-highlight-color: transparent; }
     @keyframes dot { 30% { opacity: 0.95; } 60% { opacity: 0.2; } }
   </style>
 </head>
 <body>
   <div id="project"></div>
+  <a id="back" href="/" aria-label="Back to the room">&#x2715;</a>
   <div id="wait"><div><i></i><i></i><i></i></div></div>
   <script src="https://cdn.jsdelivr.net/npm/@turbowarp/scaffolding@0.4.0/dist/scaffolding-min.js"></script>
   <script>
@@ -37,6 +43,26 @@
       try { parent.postMessage({ amongUs: "ready" }, location.origin); } catch (e) {}
     }
     setTimeout(show, 60000);
+
+    // Still counts as online in the room (see AwayPlayers.cs): checks in every 20 s, and is
+    // gone as soon as this page closes (or, failing that, a minute or so after the last check-in).
+    // (Kept in the joins list as "away_..." entries, which joins.html leaves out.)
+    var DB = "https://tytuswebsite-board-default-rtdb.firebaseio.com/joins";
+    var me = DB + "/away_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + ".json";
+    function checkIn() {
+      fetch(me, { method: "PUT", body: JSON.stringify({ n: "", ms: Date.now(), t: "away" }), keepalive: true }).catch(function () {});
+    }
+    checkIn();
+    setInterval(checkIn, 20000);
+    window.addEventListener("pagehide", function () { fetch(me, { method: "DELETE", keepalive: true }).catch(function () {}); });
+    window.addEventListener("pageshow", function (e) { if (e.persisted) checkIn(); });
+    // Old check-ins left behind (a closed phone tab) are cleared out.
+    fetch(DB + '.json?orderBy="$key"&startAt="away_"&endAt="away_~"').then(function (r) { return r.json(); }).then(function (all) {
+      if (!all) return;
+      Object.keys(all).forEach(function (k) {
+        if (!all[k] || Date.now() - all[k].ms > 300000) fetch(DB + "/" + k + ".json", { method: "DELETE" }).catch(function () {});
+      });
+    }).catch(function () {});
 
     var scaffolding = new Scaffolding.Scaffolding();
     scaffolding.width = 480;

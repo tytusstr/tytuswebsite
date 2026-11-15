@@ -10,7 +10,7 @@ namespace GlassRoom
     /// </summary>
     public class GameButton : MonoBehaviour
     {
-        public const string Url = "/amongus.html";
+        public const string Url = "/amongus";
         public const string Title = "Among Us";
 
         /// <summary>True while the game is open over the room.</summary>

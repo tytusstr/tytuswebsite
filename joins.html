@@ -28,11 +28,12 @@
   <table><thead><tr><th>#</th><th>Name</th><th>Last joined</th></tr></thead><tbody id="rows"></tbody></table>
 </main>
 <script>
-  // The game keeps one entry per name (the latest 200) in its online database.
+  // The game keeps one entry per name (the latest 200) in its online database. ("away_..."
+  // entries are people playing Among Us from the room, not joins.)
   fetch("https://tytuswebsite-board-default-rtdb.firebaseio.com/joins.json", { cache: "no-store" })
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      var list = Object.keys(data || {}).map(function (k) { return data[k]; }).filter(function (e) { return e && e.ms; });
+      var list = Object.keys(data || {}).filter(function (k) { return k.indexOf("away_") !== 0; }).map(function (k) { return data[k]; }).filter(function (e) { return e && e.ms; });
       list.forEach(function (e) { if (!e.n || e.n === "(no name)") { e.n = "Someone joined"; e.anon = true; } });
       list.sort(function (a, b) { return b.ms - a.ms; });
       var fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
