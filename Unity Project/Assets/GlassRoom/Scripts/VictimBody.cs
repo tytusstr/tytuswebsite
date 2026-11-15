@@ -323,6 +323,7 @@ namespace GlassRoom
                     float fx = (float)x / N, fy = (float)y / N;
                     uvs[i] = new Vector2(fx, fy);
                     Vector3 p = at + a * ((fx - 0.5f) * size) + b * ((fy - 0.5f) * size);
+                    verts[i] = p; norms[i] = normal;
                     if (surface.Raycast(new Ray(p + normal * reach, -normal), out var h, reach * 2f) && Vector3.Dot(h.normal, normal) > 0.2f)
                     {
                         hit[i] = true;
@@ -337,8 +338,8 @@ namespace GlassRoom
                 for (int x = 0; x < N; x++)
                 {
                     int i0 = y * (N + 1) + x, i1 = i0 + 1, i2 = i0 + N + 1, i3 = i2 + 1;
-                    if (Ok(i0, i2) && Ok(i2, i3) && Ok(i0, i3)) { tris.Add(i0); tris.Add(i2); tris.Add(i3); }
-                    if (Ok(i0, i3) && Ok(i3, i1) && Ok(i0, i1)) { tris.Add(i0); tris.Add(i3); tris.Add(i1); }
+                    if (Ok(i0, i2) && Ok(i2, i3) && Ok(i0, i3)) { tris.Add(i0); tris.Add(i3); tris.Add(i2); }
+                    if (Ok(i0, i3) && Ok(i3, i1) && Ok(i0, i1)) { tris.Add(i0); tris.Add(i1); tris.Add(i3); }
                 }
             if (tris.Count == 0) return null;
             var m = new Mesh { name = "Wall Splash" };
