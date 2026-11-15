@@ -191,12 +191,10 @@
         .then(function (data) { return scaffolding.loadProject(data); })
         .then(function () {
           applySettings();
-          // Phones start on Touch controls instead of the joystick (the game's own setting:
-          // "controls" 0 = Joystick, 1 = Touch; it can still be changed in its settings).
-          if (phone) {
-            var stage = vm.runtime.getTargetForStage();
-            for (var id in stage.variables) if (stage.variables[id].name === "controls") stage.variables[id].value = "1";
-          }
+          // Always starts on Touch controls instead of the joystick, on computers too (the game's
+          // own setting: "controls" 0 = Joystick, 1 = Touch; it can still be changed in its settings).
+          var stage = vm.runtime.getTargetForStage();
+          for (var id in stage.variables) if (stage.variables[id].name === "controls") stage.variables[id].value = "1";
           loaded = true;
           begin();
         });
