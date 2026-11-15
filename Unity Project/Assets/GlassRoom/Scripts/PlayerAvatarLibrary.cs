@@ -16,6 +16,7 @@ namespace GlassRoom
             if (avatars == null || avatars.Length == 0) return null;
             var prefab = avatars[Mathf.Abs(index) % avatars.Length];
             var avatar = Instantiate(prefab, parent);
+            avatar.Female = prefab.name.StartsWith("Female");
             // Posed straight away (standing), so it never shows its arms-out set-up pose for a frame.
             var animator = avatar.GetComponentInChildren<Animator>();
             if (animator != null) animator.Update(0f);

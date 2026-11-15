@@ -106,6 +106,33 @@ namespace GlassRoom
         int m_KnocksShown = -1;
         bool m_IsDown;
 
+        /// <summary>A woman (else a man): which grunt they make.</summary>
+        public bool Female { get; set; }
+
+        AudioSource m_Voice;
+        static AudioClip s_GruntMale, s_GruntFemale;
+
+        /// <summary>The grunt as they're knocked over (a man's or a woman's).</summary>
+        public void Grunt()
+        {
+            if (m_Voice == null)
+            {
+                m_Voice = gameObject.AddComponent<AudioSource>();
+                m_Voice.playOnAwake = false;
+                m_Voice.spatialBlend = 1f;
+                m_Voice.rolloffMode = AudioRolloffMode.Linear;
+                m_Voice.minDistance = 3f;
+                m_Voice.maxDistance = 35f;
+                SoundSettings.Tag(m_Voice, SoundKind.Blood);
+            }
+            if (s_GruntMale == null) s_GruntMale = Resources.Load<AudioClip>("Sounds/Grunt Male");
+            if (s_GruntFemale == null) s_GruntFemale = Resources.Load<AudioClip>("Sounds/Grunt Female");
+            var clip = Female ? s_GruntFemale : s_GruntMale;
+            if (clip == null || !SoundSettings.Enabled(SoundKind.Blood)) return;
+            m_Voice.pitch = Random.Range(0.94f, 1.06f);
+            m_Voice.PlayOneShot(clip, 0.9f);
+        }
+
         /// <summary>Knocked over by a scooter: down now or not, which way, and how many times so far.</summary>
         public void Knock(bool down, bool backwards, int count)
         {

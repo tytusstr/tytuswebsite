@@ -1101,6 +1101,8 @@ namespace GlassRoom
             // Straight into a rag doll, thrown the way the scooter was going (no recording first).
             var body = Limp;
             if (body != null) body.BeginHit(dir, speed * Mathf.Lerp(1.0f, 1.25f, t), m_Controller);
+            var me = GetComponent<LocalPlayerBody>();
+            if (me != null && me.Avatar != null) me.Avatar.Grunt();
         }
 
         // Knocked over: backwards if hit from the front, onto your front if from behind.

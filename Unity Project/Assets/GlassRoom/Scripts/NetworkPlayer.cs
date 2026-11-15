@@ -244,6 +244,7 @@ namespace GlassRoom
         // ---- A lying body hit by a scooter: the rider's game moves it, and shows everyone ----
 
         float m_DrivenUntil, m_LastPush, m_NextDriveSend;
+        int m_KnocksHeard = -1;
         bool m_Driving;
 
         /// <summary>Their limp body as shown here (null when not lying limp).</summary>
@@ -488,6 +489,9 @@ namespace GlassRoom
             {
                 float tk = Mathf.InverseLerp(knock, 8f, speed);
                 m_Avatar.Ragdoll.BeginHit(dir, speed * Mathf.Lerp(1.0f, 1.25f, tk), null);
+                // Heard now (not again when their game says they fell).
+                m_Avatar.Grunt();
+                m_KnocksHeard = Knocks + 1;
                 m_Avatar.Ragdoll.Hold(0.6f);
                 m_Driving = true;
                 m_LastPush = Time.time;
@@ -635,6 +639,9 @@ namespace GlassRoom
             // Just hit by your own scooter: knocked over (or shoved) here at once, thrown ahead of
             // it; their game catches up a moment later.
             bool predicted = Predicting(ref feet);
+            // Knocked over (seen from here): their grunt.
+            if (m_KnocksHeard < 0) m_KnocksHeard = Knocks;
+            else if (Knocks > m_KnocksHeard) { m_KnocksHeard = Knocks; if (IsDown || LimpBody != null) m_Avatar.Grunt(); }
             if (predicted) m_Avatar.Knock(m_PredictDown, m_PredictBack, m_PredictKnocks);
             if (predicted && m_PredictDown) yaw = m_PredictYaw;
             else m_Avatar.Knock(IsDown, FellBackwards, Knocks);
