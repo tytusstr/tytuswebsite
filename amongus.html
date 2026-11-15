@@ -93,11 +93,31 @@
     // while playing ("playing") and marked "left" when this page closes.
     var DB = "https://tytuswebsite-board-default-rtdb.firebaseio.com/joins";
     var given = (params.get("name") || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
-    var me = DB + "/away_" + (given ? given.toLowerCase() : "a_" + Date.now()) + ".json";
+    var me = null;
     function checkIn(state) {
+      if (!me) return;
       fetch(me, { method: "PUT", body: JSON.stringify({ n: given, ms: Date.now(), t: state }), keepalive: true }).catch(function () {});
     }
-    checkIn("playing");
+    // Two people from here with the same name can't both play (the game says "double session
+    // detected"), so if someone from here is already playing Among Us under your name, you play
+    // as TYTUS2, TYTUS3, ... instead. Only in Among Us: your name on the site stays the same.
+    var nameReady = (given ? fetch(DB + '.json?orderBy="$key"&startAt="away_"&endAt="away_~"')
+      .then(function (r) { return r.json(); })
+      .then(function (all) {
+        var taken = {};
+        Object.keys(all || {}).forEach(function (k) {
+          var e = all[k];
+          if (e && e.t === "playing" && e.n && Date.now() - e.ms < 75000) taken[String(e.n).toLowerCase()] = true;
+        });
+        var base = given;
+        for (var i = 2; taken[given.toLowerCase()] && i < 1000; i++) given = base.slice(0, 20 - String(i).length) + i;
+      }).catch(function () {}) : Promise.resolve())
+      .then(function () {
+        if (given) name = given;
+        scaffolding.setUsername(name);
+        me = DB + "/away_" + (given ? given.toLowerCase() : "a_" + Date.now()) + ".json";
+        checkIn("playing");
+      });
     setInterval(function () { checkIn("playing"); }, 20000);
     window.addEventListener("pagehide", function () { checkIn("left"); });
     window.addEventListener("pageshow", function (e) { if (e.persisted) checkIn("playing"); });
@@ -164,9 +184,9 @@
 
     var CLOUD = "wss://clouddata.turbowarp.org";
     var TYTUS_ROOM = "tytusstrickland-amongus";
-    var server = null, loaded = false;
+    var server = null, chosen = false, loaded = false;
     function begin() {
-      if (!server || !loaded) return;
+      if (!chosen || !loaded) return;
       scaffolding.start();
       scaffolding.greenFlag();
       watchForMenu();
@@ -178,9 +198,12 @@
         document.getElementById("servers").classList.add("gone");
         wait.classList.remove("hidden");
         setTimeout(show, 60000);
-        scaffolding.addCloudProvider(new Scaffolding.CloudVariables.WebSocketProvider(CLOUD, server === "tytus" ? TYTUS_ROOM : PROJECT));
-        if (server === "tytus") startChat();
-        begin();
+        nameReady.then(function () {
+          scaffolding.addCloudProvider(new Scaffolding.CloudVariables.WebSocketProvider(CLOUD, server === "tytus" ? TYTUS_ROOM : PROJECT));
+          if (server === "tytus") startChat();
+          chosen = true;
+          begin();
+        });
       });
     });
 

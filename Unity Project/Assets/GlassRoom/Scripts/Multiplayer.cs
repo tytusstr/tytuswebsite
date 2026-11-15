@@ -186,7 +186,8 @@ namespace GlassRoom
             if (m_JoinedAt < 0f)
             {
                 m_JoinedAt = Time.unscaledTime;
-                // (Who came in is recorded once their name is settled; see NetworkPlayer.PickName.)
+                // Who came in, and when (kept online; see JoinLog).
+                StartCoroutine(JoinLog.Record(WebPage.PlayerName));
             }
         }
 

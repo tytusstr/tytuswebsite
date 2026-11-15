@@ -17,9 +17,6 @@ namespace GlassRoom
         /// <summary>How many are playing Among Us right now.</summary>
         public static int Count { get; private set; }
 
-        /// <summary>Their names (those who have one).</summary>
-        public static readonly List<string> Names = new List<string>();
-
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Begin()
         {
@@ -38,18 +35,13 @@ namespace GlassRoom
                 {
                     long now = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     int n = 0;
-                    Names.Clear();
                     foreach (var kv in all)
                         if (kv.Value is Dictionary<string, object> e && e.TryGetValue("ms", out var t)
                             && e.TryGetValue("t", out var state) && (state as string) == "playing"
-                            && now - System.Convert.ToDouble(t) < 75000)
-                        {
-                            n++;
-                            if (e.TryGetValue("n", out var who) && who is string name && name.Length > 0) Names.Add(name);
-                        }
+                            && now - System.Convert.ToDouble(t) < 75000) n++;
                     Count = n;
                 }
-                else if (request.result == UnityWebRequest.Result.Success) { Count = 0; Names.Clear(); }
+                else if (request.result == UnityWebRequest.Result.Success) Count = 0;
                 request.Dispose();
                 yield return new WaitForSecondsRealtime(15f);
             }

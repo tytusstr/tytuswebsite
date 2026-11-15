@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Collections;
 using Fusion;
 using UnityEngine;
@@ -75,7 +74,7 @@ namespace GlassRoom
             if (HasStateAuthority)
             {
                 Multiplayer.Local = this;
-                StartCoroutine(PickName());
+                PlayerName = WebPage.PlayerName;
                 m_MyBody = m_Me != null ? m_Me.GetComponent<LocalPlayerBody>() : null;
                 SeatIndex = -1;
                 RideIndex = -1;
@@ -164,7 +163,7 @@ namespace GlassRoom
             RideIndex = Riding ? Multiplayer.ScooterIndex(m_Me.CurrentRide) : -1;
             HeadYaw = m_Me.HeadYaw;
             // Your name, if you change it in the settings (checked about once a second).
-            if (m_NamePicked && Time.unscaledTime >= m_NextNameCheck)
+            if (Time.unscaledTime >= m_NextNameCheck)
             {
                 m_NextNameCheck = Time.unscaledTime + 1f;
                 string name = WebPage.PlayerName;
@@ -422,53 +421,10 @@ namespace GlassRoom
 
         IEnumerator AnnounceJoin()
         {
-            // (A newcomer first makes sure their name is free, which can take a moment; see PickName.)
-            float until = Time.unscaledTime + 4f;
+            float until = Time.unscaledTime + 1.5f;
             while (Time.unscaledTime < until && PlayerName.Length == 0) yield return null;
             if (ChatBox.Instance != null) ChatBox.Instance.Joined(PlayerName.ToString());
             m_ShownName = PlayerName.ToString();
-        }
-
-        bool m_NamePicked;
-        static bool s_Recorded;
-
-        // Coming in under a name someone here already has (or someone who went from here to
-        // Among Us, where two of the same name can't play): you get the first free one of
-        // "Name 2", "Name 3", ..., and it's saved as your name. Waits until everyone already in
-        // the room has arrived on this side (a couple of seconds at most) before sharing a name.
-        IEnumerator PickName()
-        {
-            float until = Time.unscaledTime + 3f;
-            while (Time.unscaledTime < until && !Multiplayer.RoomReady) yield return null;
-            string wanted = WebPage.PlayerName;
-            if (wanted.Length > 0)
-            {
-                var taken = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-                foreach (var p in Multiplayer.Players)
-                    if (p != null && p != this && p.Object != null && p.Object.IsValid) taken.Add(p.PlayerName.ToString().Trim());
-                foreach (var n in AwayPlayers.Names) taken.Add(n);
-                string free = FreeName(wanted, taken);
-                if (free != wanted) WebPage.SetPlayerName(free);
-            }
-            PlayerName = WebPage.PlayerName;
-            m_NamePicked = true;
-            // Who came in, and when (kept online; see JoinLog).
-            if (!s_Recorded) { s_Recorded = true; Multiplayer.Instance.StartCoroutine(JoinLog.Record(WebPage.PlayerName)); }
-        }
-
-        // The name itself if nobody has it, otherwise the first "Name N" nobody has (kept to 20
-        // characters). Among Us names have their spaces turned into _, so those count too.
-        static string FreeName(string wanted, HashSet<string> taken)
-        {
-            bool Taken(string n) => taken.Contains(n) || taken.Contains(n.Replace(' ', '_'));
-            if (!Taken(wanted)) return wanted;
-            for (int i = 2; i < 1000; i++)
-            {
-                string suffix = " " + i;
-                string name = (wanted.Length + suffix.Length > 20 ? wanted.Substring(0, 20 - suffix.Length).TrimEnd() : wanted) + suffix;
-                if (!Taken(name)) return name;
-            }
-            return wanted;
         }
 
         // The name everyone last saw for this player; a change after joining is announced.
