@@ -397,7 +397,7 @@ namespace GlassRoom
         int m_PredictKnocks;
         bool m_PredictBack, m_PredictDown;
         Vector3 m_PredictPos, m_PredictVel, m_PredictDir;
-        float m_PredictDecel;
+        float m_PredictDecel, m_PredictYaw;
 
         /// <summary>Your scooter just hit them (on foot or lying): shown here straight away.</summary>
         public void PredictHit(Vector3 dir, float speed)
@@ -418,8 +418,10 @@ namespace GlassRoom
             m_PredictDown = falls;
             m_PredictKnocks = falls ? Knocks + 1 : Knocks;
             m_PredictBack = Vector3.Dot(dir, transform.forward) < 0f;
+            Vector3 face = m_PredictBack ? -dir : dir;
+            m_PredictYaw = Mathf.Atan2(face.x, face.z) * Mathf.Rad2Deg;
             m_PredictVel = dir * speed * (falls ? Mathf.Lerp(1.1f, 1.5f, t) : Mathf.Lerp(0.9f, 1.3f, speed / knock));
-            m_PredictDecel = falls ? 4f : 5f;
+            m_PredictDecel = falls ? 3f : 5f;
             m_PredictDir = dir;
             m_PredictPos = m_Avatar.transform.position;
             m_PredictAt = Time.time;
@@ -551,6 +553,7 @@ namespace GlassRoom
             // it; their game catches up a moment later.
             bool predicted = Predicting(ref feet);
             if (predicted) m_Avatar.Knock(m_PredictDown, m_PredictBack, m_PredictKnocks);
+            if (predicted && m_PredictDown) yaw = m_PredictYaw;
             else m_Avatar.Knock(IsDown, FellBackwards, Knocks);
             if (m_Avatar.Ragdoll != null) m_Avatar.Ragdoll.PassThrough(m_Me != null ? m_Me.GetComponent<CharacterController>() : null, m_Me != null && m_Me.CurrentRide != null);
             m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime, PlayerAvatar.LeanBack(seat));

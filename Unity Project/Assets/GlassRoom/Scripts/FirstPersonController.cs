@@ -1030,7 +1030,7 @@ namespace GlassRoom
                     // later), and shown here at once: thrown ahead of you, never through you.
                     float ahead = Vector3.Dot(apart, heading);
                     Vector3 side = apart - heading * ahead;
-                    Vector3 sideways = side.sqrMagnitude > 0.0001f ? side.normalized * Mathf.Clamp01(side.magnitude / reach) * 0.5f : Vector3.zero;
+                    Vector3 sideways = side.sqrMagnitude > 0.0001f ? side.normalized * Mathf.Clamp01(side.magnitude / reach) * 0.3f : Vector3.zero;
                     Multiplayer.Local.Hit(p, heading + sideways, speed);
                     p.PredictHit(heading + sideways, speed);
                 }
@@ -1091,6 +1091,11 @@ namespace GlassRoom
         void Fall(Vector3 dir)
         {
             m_DownBackwards = Vector3.Dot(dir, transform.forward) < 0f;
+            // The body turns square to the hit, so it falls the way the scooter was going
+            // (onto the back facing it, onto the front facing away).
+            Vector3 face = m_DownBackwards ? -dir : dir;
+            m_Yaw = m_BodyYaw = Mathf.Atan2(face.x, face.z) * Mathf.Rad2Deg;
+            transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
             m_Down = true;
             m_Rising = false;
             m_DownTime = 0f;
@@ -1180,7 +1185,7 @@ namespace GlassRoom
             // Once you've hit the floor the body goes limp (a rag doll), and you stay with it.
             var limp = Limp;
             if (!m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.55f : 1.3f))
-                limp.Begin(new Vector3(m_Knock.x, 0f, m_Knock.z) * 0.6f, m_Controller);
+                limp.Begin(new Vector3(m_Knock.x, 0f, m_Knock.z) * 0.85f, m_Controller);
             if (limp != null && limp.Active && !m_Rising)
             {
                 Vector3 hips = limp.Pelvis.position;
@@ -1190,7 +1195,7 @@ namespace GlassRoom
             }
             else
             {
-                m_Knock = Vector3.MoveTowards(m_Knock, Vector3.zero, 4f * dt);
+                m_Knock = Vector3.MoveTowards(m_Knock, Vector3.zero, 3f * dt);
                 float vertical = m_Controller.isGrounded ? -2f : m_Velocity.y - gravity * dt;
                 m_Velocity = new Vector3(m_Knock.x, vertical, m_Knock.z);
                 m_Controller.Move(m_Velocity * dt);
@@ -1335,7 +1340,7 @@ namespace GlassRoom
                 if (Time.time - m_LastScooterHit > (Lying ? 0.25f : 0.5f))
                 {
                     m_LastScooterHit = Time.time;
-                    Vector3 sideways = side.sqrMagnitude > 0.0001f ? side.normalized * Mathf.Clamp01(side.magnitude / gap) * 0.5f : Vector3.zero;
+                    Vector3 sideways = side.sqrMagnitude > 0.0001f ? side.normalized * Mathf.Clamp01(side.magnitude / gap) * 0.3f : Vector3.zero;
                     TakeHit(heading + sideways, speed);
                     // (The rider's own game makes the sound for a ridden one.)
                     if (speed > StandUpScooter.CrashSpeed && !Multiplayer.ScooterRiddenByOther(scooter)) scooter.Crash(speed);
