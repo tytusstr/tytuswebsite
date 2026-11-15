@@ -144,6 +144,17 @@ namespace GlassRoom
                 if (ignore != null) Physics.IgnoreCollision(c, ignore, true);
             }
             m_PassThrough = false;
+            // Scooters and other people's shapes don't knock the limp body about (a scooter that
+            // runs into it pushes it along instead; see Hit).
+            foreach (var scooter in FindObjectsByType<StandUpScooter>(FindObjectsInactive.Exclude))
+                foreach (var other in scooter.GetComponentsInChildren<Collider>())
+                    foreach (var c in m_Colliders) Physics.IgnoreCollision(c, other, true);
+            foreach (var avatar in FindObjectsByType<PlayerAvatar>(FindObjectsInactive.Exclude))
+            {
+                if (avatar.gameObject == gameObject) continue;
+                foreach (var other in avatar.GetComponents<Collider>())
+                    foreach (var c in m_Colliders) Physics.IgnoreCollision(c, other, true);
+            }
             SetUpHead();
             m_Looking = m_LookApplied = false;
             m_LookYaw = m_LookPitch = 0f;
@@ -161,7 +172,21 @@ namespace GlassRoom
             if (!m_Simulating) return;
             heading.y = 0f;
             heading.Normalize();
-            foreach (var rb in m_Bodies) rb.AddForce((heading + Vector3.up * 0.15f) * speed * 1.3f, ForceMode.VelocityChange);
+            // Every part carried along at a little more than the scooter's speed, the way it was
+            // going (never added up hit after hit, so it can't fling the body about).
+            float target = speed * 1.15f;
+            foreach (var rb in m_Bodies)
+            {
+                Vector3 v = rb.linearVelocity;
+                float along = Vector3.Dot(v, heading);
+                if (along < target) v += heading * (target - along);
+                // Sideways drift is kept small: it goes the scooter's way.
+                Vector3 side = v - heading * Vector3.Dot(v, heading);
+                side.y = 0f;
+                v -= side * 0.6f;
+                if (v.y < 0.6f) v.y = 0.6f;
+                rb.linearVelocity = v;
+            }
         }
 
         /// <summary>Lying where someone else's game has them (and bumpable here).</summary>

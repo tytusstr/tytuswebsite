@@ -208,11 +208,12 @@ namespace GlassRoom
             {
                 bool differs = reference.MusicTrack != m_Radio.CurrentTrack || (bool)reference.MusicOn != m_Radio.IsOn
                                || Mathf.Abs(reference.MusicPosition - m_Radio.Position) > 2.5f;
-                if (differs || reference.MusicVersion > MusicVersion)
+                if (differs || reference.MusicVersion - 1 > MusicVersion)
                 {
                     // A moment later than they reported, for the time the message took.
                     m_Radio.ApplyShared(reference.MusicOn, reference.MusicTrack, reference.MusicPosition + (reference.MusicOn ? 0.15f : 0f));
-                    MusicVersion = reference.MusicVersion;
+                    // One below theirs: following never makes you the one everyone follows.
+                    MusicVersion = reference.MusicVersion - 1;
                 }
             }
             MusicTrack = m_Radio.CurrentTrack;
@@ -517,7 +518,7 @@ namespace GlassRoom
                 var scooter = scooters[i];
                 if (scooter == null || Multiplayer.ScooterOwner(i) != this) continue;
                 if (m_Me != null && m_Me.CurrentRide == scooter) continue;
-                scooter.FollowRemote(ScooterPositions[i], ScooterYaws[i], ScooterSpeeds[i], Riding && RideIndex == i);
+                scooter.FollowRemote(ScooterPositions[i], ScooterYaws[i], ScooterSpeeds[i], Riding && RideIndex == i && !Stale);
             }
 
             if (m_AvatarShown != AvatarIndex || m_Avatar == null)

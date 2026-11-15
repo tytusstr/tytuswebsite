@@ -1076,7 +1076,7 @@ namespace GlassRoom
                 Debug.Log($"Hit by a scooter at {speed:F1} m/s while down");
                 return;
             }
-            Debug.Log($"Hit by a scooter at {speed:F1} m/s" + (speed >= KnockSpeed ? ": knocked over" : ""));
+            Debug.Log($"Hit by a scooter at {speed:F1} m/s" + (speed >= KnockSpeed ? ": knocked over" : "") + $" going {Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg:F0} deg");
             if (speed < KnockSpeed)
             {
                 // A shove: thrown a little way, more the faster it was going.
@@ -1090,6 +1090,9 @@ namespace GlassRoom
         // Knocked over: backwards if hit from the front, onto your front if from behind.
         void Fall(Vector3 dir)
         {
+            // (A rag doll somehow still going from before is let go first.)
+            var stale = Limp;
+            if (stale != null && stale.Active) stale.End();
             m_DownBackwards = Vector3.Dot(dir, transform.forward) < 0f;
             // The body turns square to the hit, so it falls the way the scooter was going
             // (onto the back facing it, onto the front facing away).
@@ -1184,9 +1187,10 @@ namespace GlassRoom
             }
             // Once you've hit the floor the body goes limp (a rag doll), and you stay with it.
             var limp = Limp;
-            if (!m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.55f : 1.3f))
+            // (Not on the moment you've finished getting up: you're standing again then.)
+            if (m_Down && !m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.55f : 1.3f))
                 limp.Begin(new Vector3(m_Knock.x, 0f, m_Knock.z) * 0.85f, m_Controller);
-            if (limp != null && limp.Active && !m_Rising)
+            if (m_Down && limp != null && limp.Active && !m_Rising)
             {
                 Vector3 hips = limp.Pelvis.position;
                 Vector3 to = new Vector3(hips.x, transform.position.y, hips.z) - transform.position;
@@ -1316,6 +1320,9 @@ namespace GlassRoom
             {
                 if (scooter == null) continue;
                 float speed = Mathf.Abs(scooter.Speed);
+                // A moving scooter (or any, while you're down) doesn't shove you out of its
+                // shape sideways: it hits you and you're thrown along its way (below).
+                PassThroughScooter(scooter, speed >= 0.3f || Down);
                 if (speed < 0.3f) continue;
                 Vector3 heading = scooter.transform.forward * Mathf.Sign(scooter.Speed);
                 heading.y = 0f;
@@ -1348,6 +1355,15 @@ namespace GlassRoom
                 else if (!Down && Vector3.Dot(m_Shove, heading) < speed)
                     m_Shove += heading * (speed - Vector3.Dot(m_Shove, heading)); // carried along
             }
+        }
+
+        readonly System.Collections.Generic.Dictionary<StandUpScooter, Collider[]> m_ScooterShapes = new System.Collections.Generic.Dictionary<StandUpScooter, Collider[]>();
+
+        // (Set every frame: turning your capsule off and on, as teleporting does, forgets it.)
+        void PassThroughScooter(StandUpScooter scooter, bool pass)
+        {
+            if (!m_ScooterShapes.TryGetValue(scooter, out var shapes)) m_ScooterShapes[scooter] = shapes = scooter.GetComponentsInChildren<Collider>();
+            foreach (var c in shapes) if (c != null) Physics.IgnoreCollision(m_Controller, c, pass);
         }
 
         // ---------- Cursor and hints ----------

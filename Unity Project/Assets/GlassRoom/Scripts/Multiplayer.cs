@@ -380,17 +380,18 @@ namespace GlassRoom
         }
 
         /// <summary>Whose radio everyone follows: whoever pressed it last (else the earliest to join).</summary>
-        public static NetworkPlayer MusicReference() => Best(p => p.MusicVersion);
+        /// <summary>(Not someone whose game has stopped: their music has stopped with it.)</summary>
+        public static NetworkPlayer MusicReference() => Best(p => p.MusicVersion, true);
 
         /// <summary>The player who has been in the room longest (lowest number).</summary>
         public static NetworkPlayer Oldest() => Best(p => 0);
 
-        static NetworkPlayer Best(System.Func<NetworkPlayer, int> version)
+        static NetworkPlayer Best(System.Func<NetworkPlayer, int> version, bool skipStale = false)
         {
             NetworkPlayer best = null;
             foreach (var p in Players)
             {
-                if (p == null || p.Object == null || !p.Object.IsValid) continue;
+                if (p == null || p.Object == null || !p.Object.IsValid || (skipStale && p.Stale)) continue;
                 if (best == null) { best = p; continue; }
                 int a = version(p), b = version(best);
                 if (a > b || (a == b && p.PlayerId < best.PlayerId)) best = p;
