@@ -1216,7 +1216,7 @@ namespace GlassRoom
             // Once you've hit the floor the body goes limp (a rag doll), and you stay with it.
             var limp = Limp;
             // (Not on the moment you've finished getting up: you're standing again then.)
-            if (m_Down && !m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.55f : 1.3f))
+            if (m_Down && !m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.36f : 0.5f))
                 limp.Begin(new Vector3(m_Knock.x, 0f, m_Knock.z) * 0.85f, m_Controller);
             // A rider's game stopped moving your body without saying so: yours takes over.
             if (limp != null && limp.Following && !Driven) limp.Release();

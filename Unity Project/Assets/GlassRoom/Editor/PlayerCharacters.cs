@@ -168,8 +168,9 @@ namespace GlassRoom.Editor
             {
                 // Back: the recording staggers first, so it starts where the fall begins; getting up
                 // is left before the arms swing back at the end.
-                Knockdown(sm, move, "Back", fallBack, 0.405f, upBack, 0f, 1f, 0.55f, true);
-                Knockdown(sm, move, "Front", fallFront, 0.05f, upFront, 0.42f, 2.3f, 0.86f, false);
+                // Each starts where the body actually starts to drop (no stagger, hop or fists up first).
+                Knockdown(sm, move, "Back", fallBack, 0.37f, upBack, 0f, 1f, 0.55f, true);
+                Knockdown(sm, move, "Front", fallFront, 0.21f, upFront, 0.42f, 2.3f, 0.86f, false);
             }
             EditorUtility.SetDirty(controller);
             return controller;
@@ -332,11 +333,28 @@ namespace GlassRoom.Editor
                     if (b.name == "Bip01" || b.name == "Bip01 Pelvis") pos[b] = new[] { new AnimationCurve(), new AnimationCurve(), new AnimationCurve() };
                 }
                 var lowest = new float[frames];
+                bool falling = move == "Knocked Out" || move == "Fall Flat";
+                var root = bones.Find(b => b.name == "Bip01");
+                var lThigh = bones.Find(b => b.name == "Bip01 L Thigh");
+                var rThigh = bones.Find(b => b.name == "Bip01 R Thigh");
                 for (int f = 0; f < frames; f++)
                 {
                     float time = Mathf.Min(source.length, f / 30f);
                     UnityEngine.Playables.PlayableExtensions.SetTime(playable, (double)time);
                     graph.Evaluate();
+                    // Falling, the body keeps facing the way it started (the recordings turn
+                    // to the side as they go down): the turn is taken out, around the middle.
+                    if (falling && root != null && lThigh != null && rThigh != null)
+                    {
+                        Vector3 face = Vector3.Cross(Vector3.up, lThigh.position - rThigh.position);
+                        face.y = 0f;
+                        if (face.sqrMagnitude > 0.0001f)
+                        {
+                            var undo = Quaternion.Euler(0f, -Mathf.Atan2(face.x, face.z) * Mathf.Rad2Deg, 0f);
+                            Vector3 at = root.position;
+                            root.SetPositionAndRotation(new Vector3(0f, at.y, 0f) + undo * new Vector3(at.x, 0f, at.z), undo * root.rotation);
+                        }
+                    }
                     lowest[f] = float.MaxValue;
                     foreach (var b in bones)
                         if (!b.name.Contains("Footsteps")) lowest[f] = Mathf.Min(lowest[f], b.position.y);

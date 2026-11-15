@@ -499,7 +499,10 @@ namespace GlassRoom
         {
             float age = Time.time - m_PredictAt;
             if (age > 2.5f) return false;
-            bool caughtUp = m_PredictDown ? (Knocks >= m_PredictKnocks && IsDown) : age > 0.6f;
+            // (Down: also once their body has turned the way it fell, so it never swings round.)
+            bool caughtUp = m_PredictDown
+                ? Knocks >= m_PredictKnocks && IsDown && (Mathf.Abs(Mathf.DeltaAngle(transform.eulerAngles.y, m_PredictYaw)) < 12f || age > 1.5f)
+                : age > 0.6f;
             if (!caughtUp && age > 1.2f) { m_PredictAt = -10f; return false; } // it never happened there
             float dt = Time.deltaTime;
             m_PredictPos += m_PredictVel * dt;
