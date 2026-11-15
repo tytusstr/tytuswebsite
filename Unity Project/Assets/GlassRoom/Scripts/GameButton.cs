@@ -40,7 +40,9 @@ namespace GlassRoom
             normal.y = 0f; normal.Normalize();
             var go = new GameObject("Game Button");
             go.transform.SetPositionAndRotation(at, Quaternion.LookRotation(normal));
-            go.AddComponent<GameButton>().Build();
+            var button = go.AddComponent<GameButton>();
+            button.Build();
+            foreach (var player in FindObjectsByType<FirstPersonController>(FindObjectsSortMode.None)) player.AddInteractable(button);
         }
 
         void Build()

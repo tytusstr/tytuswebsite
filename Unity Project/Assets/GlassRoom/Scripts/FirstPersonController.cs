@@ -85,6 +85,12 @@ namespace GlassRoom
         // Scooters and speakers in the scene, for the phone buttons.
         readonly System.Collections.Generic.List<Component> m_Interactables = new System.Collections.Generic.List<Component>();
 
+        /// <summary>Something made after the room loaded that you can use (the phone buttons offer it too).</summary>
+        public void AddInteractable(Component thing)
+        {
+            if (thing != null && !m_Interactables.Contains(thing)) m_Interactables.Add(thing);
+        }
+
         void Awake()
         {
             m_Controller = GetComponent<CharacterController>();

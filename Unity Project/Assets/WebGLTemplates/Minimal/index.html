@@ -126,6 +126,11 @@
     #gameView.open { display: block; }
     #gameCrop { position: absolute; overflow: hidden; }
     #gameFrame { position: absolute; left: 0; top: -48px; border: 0; display: block; }
+    #gameWait { position: absolute; inset: 0; display: grid; place-items: center; background: #000; transition: opacity 0.4s ease; }
+    #gameWait.done { opacity: 0; pointer-events: none; }
+    #gameWait div { display: flex; gap: 9px; }
+    #gameWait i { width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: 0.2; animation: dot 1.2s ease-in-out infinite; }
+    #gameWait i:nth-child(2) { animation-delay: 0.2s; } #gameWait i:nth-child(3) { animation-delay: 0.4s; }
     #gameClose { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); z-index: 31;
       width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(40,40,44,0.75); color: #fff; font-size: 20px; line-height: 40px;
       text-align: center; cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -142,7 +147,7 @@
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
   <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" enterkeyhint="go" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
-  <div id="gameView"><div id="gameCrop"><iframe id="gameFrame" title="Game" allow="autoplay; fullscreen; gamepad" scrolling="no"></iframe></div><button id="gameClose" type="button" aria-label="Close">&#x2715;</button></div>
+  <div id="gameView"><div id="gameCrop"><iframe id="gameFrame" title="Game" allow="autoplay; fullscreen; gamepad" scrolling="no"></iframe></div><div id="gameWait"><div><i></i><i></i><i></i></div></div><button id="gameClose" type="button" aria-label="Close">&#x2715;</button></div>
   <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
   <div id="nameEdit"><div class="col"><input id="editInput" type="text" enterkeyhint="done" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
@@ -427,16 +432,30 @@
       gameFrame.style.width = (sw + 6) + "px"; gameFrame.style.height = (sh + 54) + "px";
     }
     window.addEventListener("resize", function () { if (gameView.classList.contains("open")) fitGame(); });
+    // Its loading screen and opening logo stay hidden behind the dots: the page can't see into
+    // the game, so this waits for the page to load and then the time those take (~2.5 s + ~2.5 s).
+    var gameWait = document.getElementById("gameWait"), gameTimer = null;
+    gameFrame.addEventListener("load", function () {
+      if (!gameView.classList.contains("open") || gameFrame.src === "about:blank") return;
+      clearTimeout(gameTimer);
+      gameTimer = setTimeout(function () { gameWait.classList.add("done"); }, 6000);
+    });
     window.openGame = function (url) {
       if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
       fitGame();
+      clearTimeout(gameTimer);
+      gameWait.classList.remove("done");
       gameView.classList.add("open");
+      // The player's name in the game too (as a username the game's server accepts).
+      var name = (window.playerName || "").replace(/\s+/g, "_").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
+      if (name) url += "&username=" + encodeURIComponent(name);
       gameFrame.src = url;
       if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = true; } catch (e) {}
       setTimeout(function () { try { gameFrame.focus(); } catch (e) {} }, 100);
     };
     document.getElementById("gameClose").addEventListener("click", function (e) {
       e.stopPropagation();
+      clearTimeout(gameTimer);
       gameFrame.src = "about:blank";
       gameView.classList.remove("open");
       if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = false; } catch (e) {}
