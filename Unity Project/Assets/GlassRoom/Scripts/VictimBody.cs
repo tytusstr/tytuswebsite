@@ -35,6 +35,7 @@ namespace GlassRoom
         Vector3[] m_TargetPos;
         Quaternion[] m_TargetRot;
         bool m_Simulating, m_HasTarget, m_EverMoved;
+        float m_LastWallStain = -10f;
         float m_Quiet, m_NextSend, m_LastPush = -10f, m_LastSound = -10f;
         AudioSource m_Drag, m_Fx;
         Vector3 m_LastPelvis;
@@ -277,6 +278,9 @@ namespace GlassRoom
         public void WallStain(Vector3 at, Vector3 normal, float size, bool share)
         {
             if (wallMaterial == null || normal.sqrMagnitude < 0.01f) return;
+            // At most a few splashes a second (a body grinding on something hits it constantly).
+            if (Time.time - m_LastWallStain < 0.3f) return;
+            m_LastWallStain = Time.time;
             normal.Normalize();
             // The surface it hit: the nearest thing behind the contact that isn't the body or a player.
             Collider surface = null; float best = float.MaxValue;
@@ -297,7 +301,7 @@ namespace GlassRoom
             }
             Mesh mesh;
             try { mesh = Wrapped(shapes != null ? shapes : new List<Collider> { surface }, at, normal, size); }
-            finally { if (shapes != null) foreach (var shape in shapes) DestroyImmediate(shape.gameObject); }
+            finally { if (shapes != null) foreach (var shape in shapes) shape.enabled = false; }
             if (mesh == null) return;
             var r = Stain("Wall Splash", wallMaterial, Vector3.zero, Quaternion.identity, Vector3.one, mesh);
             r.transform.SetParent(surface.transform, true);
@@ -315,26 +319,33 @@ namespace GlassRoom
 
         // A splash shaped to the surface: a grid of points dropped onto the thing it hit, so it
         // lies on curves and stops at edges and corners instead of hanging off them.
-        // Temporary exact (not convex) copies of the model's parts near this collider. Taken from
-        // its collision shells, which keep the original meshes (the visible ones get merged).
+        // Exact (not convex) copies of the model's parts near this collider, made once per part
+        // and kept switched off; they're only on while a splash is being shaped. Taken from its
+        // collision shells, which keep the original meshes (the visible ones get merged).
+        static readonly Dictionary<MeshCollider, MeshCollider> s_Exact = new Dictionary<MeshCollider, MeshCollider>();
         static List<Collider> ModelShapes(Collider surface)
         {
             var list = new List<Collider>();
             var root = surface.attachedRigidbody != null ? surface.attachedRigidbody.transform : surface.transform.parent != null ? surface.transform.parent : surface.transform;
             foreach (var shell in root.GetComponentsInChildren<MeshCollider>())
             {
-                var mesh = shell.sharedMesh;
-                if (mesh == null || !mesh.isReadable || !shell.enabled) continue;
+                if (!shell.convex || !shell.enabled) continue;
                 if (shell.bounds.SqrDistance(surface.bounds.center) > 4f) continue;
-                var go = new GameObject("Stain Shape") { hideFlags = HideFlags.HideAndDontSave };
-                go.transform.SetPositionAndRotation(shell.transform.position, shell.transform.rotation);
-                go.transform.localScale = shell.transform.lossyScale;
-                go.layer = 2;
-                var c = go.AddComponent<MeshCollider>();
-                c.sharedMesh = mesh;
-                list.Add(c);
+                if (!s_Exact.TryGetValue(shell, out var exact))
+                {
+                    var mesh = shell.sharedMesh;
+                    if (mesh == null || !mesh.isReadable) { s_Exact[shell] = null; continue; }
+                    var go = new GameObject("Stain Shape");
+                    go.transform.SetParent(shell.transform, false);
+                    exact = go.AddComponent<MeshCollider>();
+                    exact.enabled = false;
+                    exact.sharedMesh = mesh;
+                    s_Exact[shell] = exact;
+                }
+                if (exact == null) continue;
+                exact.enabled = true;
+                list.Add(exact);
             }
-            if (list.Count > 0) Physics.SyncTransforms();
             return list;
         }
 
