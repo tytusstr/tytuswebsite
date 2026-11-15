@@ -44,25 +44,19 @@
     }
     setTimeout(show, 60000);
 
-    // Still counts as online in the room (see AwayPlayers.cs): checks in every 20 s, and is
-    // gone as soon as this page closes (or, failing that, a minute or so after the last check-in).
-    // (Kept in the joins list as "away_..." entries, which joins.html leaves out.)
+    // Still counts as online in the room (see AwayPlayers.cs), and shows on the joins page as
+    // "(Among Us)": one entry per name in the joins list ("away_..."), checked in every 20 s
+    // while playing ("playing") and marked "left" when this page closes.
     var DB = "https://tytuswebsite-board-default-rtdb.firebaseio.com/joins";
-    var me = DB + "/away_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + ".json";
-    function checkIn() {
-      fetch(me, { method: "PUT", body: JSON.stringify({ n: "", ms: Date.now(), t: "away" }), keepalive: true }).catch(function () {});
+    var given = (params.get("name") || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
+    var me = DB + "/away_" + (given ? given.toLowerCase() : "a_" + Date.now()) + ".json";
+    function checkIn(state) {
+      fetch(me, { method: "PUT", body: JSON.stringify({ n: given, ms: Date.now(), t: state }), keepalive: true }).catch(function () {});
     }
-    checkIn();
-    setInterval(checkIn, 20000);
-    window.addEventListener("pagehide", function () { fetch(me, { method: "DELETE", keepalive: true }).catch(function () {}); });
-    window.addEventListener("pageshow", function (e) { if (e.persisted) checkIn(); });
-    // Old check-ins left behind (a closed phone tab) are cleared out.
-    fetch(DB + '.json?orderBy="$key"&startAt="away_"&endAt="away_~"').then(function (r) { return r.json(); }).then(function (all) {
-      if (!all) return;
-      Object.keys(all).forEach(function (k) {
-        if (!all[k] || Date.now() - all[k].ms > 300000) fetch(DB + "/" + k + ".json", { method: "DELETE" }).catch(function () {});
-      });
-    }).catch(function () {});
+    checkIn("playing");
+    setInterval(function () { checkIn("playing"); }, 20000);
+    window.addEventListener("pagehide", function () { checkIn("left"); });
+    window.addEventListener("pageshow", function (e) { if (e.persisted) checkIn("playing"); });
 
     var scaffolding = new Scaffolding.Scaffolding();
     scaffolding.width = 480;

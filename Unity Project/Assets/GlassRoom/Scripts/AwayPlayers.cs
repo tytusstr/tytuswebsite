@@ -7,8 +7,8 @@ namespace GlassRoom
 {
     /// <summary>
     /// People who went from the room to Among Us (amongus.html): that page checks in every 20 s
-    /// in the online database (as "away_..." entries in the joins list), and they still count as
-    /// online here.
+    /// in the online database (as "away_..." entries in the joins list, marked "playing"), and
+    /// they still count as online here.
     /// </summary>
     public class AwayPlayers : MonoBehaviour
     {
@@ -37,6 +37,7 @@ namespace GlassRoom
                     int n = 0;
                     foreach (var kv in all)
                         if (kv.Value is Dictionary<string, object> e && e.TryGetValue("ms", out var t)
+                            && e.TryGetValue("t", out var state) && (state as string) == "playing"
                             && now - System.Convert.ToDouble(t) < 75000) n++;
                     Count = n;
                 }
