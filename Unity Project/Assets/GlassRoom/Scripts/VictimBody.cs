@@ -286,7 +286,18 @@ namespace GlassRoom
                 if (h.distance < best) { best = h.distance; surface = h.collider; }
             }
             if (surface == null) return;
-            var mesh = Wrapped(surface, at, normal, size);
+            // Boxes and full mesh colliders are the real shape; anything rougher (a convex shell, a
+            // capsule) gets the splash on the visible model instead, or none if that can't be read.
+            bool exact = surface is BoxCollider || (surface is MeshCollider mc && !mc.convex);
+            List<Collider> shapes = null;
+            if (!exact)
+            {
+                shapes = ModelShapes(surface);
+                if (shapes.Count == 0) return;
+            }
+            Mesh mesh;
+            try { mesh = Wrapped(shapes != null ? shapes : new List<Collider> { surface }, at, normal, size); }
+            finally { if (shapes != null) foreach (var shape in shapes) DestroyImmediate(shape.gameObject); }
             if (mesh == null) return;
             var r = Stain("Wall Splash", wallMaterial, Vector3.zero, Quaternion.identity, Vector3.one, mesh);
             r.transform.SetParent(surface.transform, true);
@@ -304,7 +315,30 @@ namespace GlassRoom
 
         // A splash shaped to the surface: a grid of points dropped onto the thing it hit, so it
         // lies on curves and stops at edges and corners instead of hanging off them.
-        static Mesh Wrapped(Collider surface, Vector3 at, Vector3 normal, float size)
+        // Temporary exact (not convex) copies of the model's parts near this collider. Taken from
+        // its collision shells, which keep the original meshes (the visible ones get merged).
+        static List<Collider> ModelShapes(Collider surface)
+        {
+            var list = new List<Collider>();
+            var root = surface.attachedRigidbody != null ? surface.attachedRigidbody.transform : surface.transform.parent != null ? surface.transform.parent : surface.transform;
+            foreach (var shell in root.GetComponentsInChildren<MeshCollider>())
+            {
+                var mesh = shell.sharedMesh;
+                if (mesh == null || !mesh.isReadable || !shell.enabled) continue;
+                if (shell.bounds.SqrDistance(surface.bounds.center) > 4f) continue;
+                var go = new GameObject("Stain Shape") { hideFlags = HideFlags.HideAndDontSave };
+                go.transform.SetPositionAndRotation(shell.transform.position, shell.transform.rotation);
+                go.transform.localScale = shell.transform.lossyScale;
+                go.layer = 2;
+                var c = go.AddComponent<MeshCollider>();
+                c.sharedMesh = mesh;
+                list.Add(c);
+            }
+            if (list.Count > 0) Physics.SyncTransforms();
+            return list;
+        }
+
+        static Mesh Wrapped(List<Collider> shapes, Vector3 at, Vector3 normal, float size)
         {
             const int N = 14;
             Vector3 u = Vector3.Cross(normal, Mathf.Abs(normal.y) > 0.9f ? Vector3.forward : Vector3.up).normalized;
@@ -324,7 +358,11 @@ namespace GlassRoom
                     uvs[i] = new Vector2(fx, fy);
                     Vector3 p = at + a * ((fx - 0.5f) * size) + b * ((fy - 0.5f) * size);
                     verts[i] = p; norms[i] = normal;
-                    if (surface.Raycast(new Ray(p + normal * reach, -normal), out var h, reach * 2f) && Vector3.Dot(h.normal, normal) > 0.2f)
+                    var ray = new Ray(p + normal * reach, -normal);
+                    RaycastHit h = default; bool got = false;
+                    foreach (var shape in shapes)
+                        if (shape.Raycast(ray, out var sh, reach * 2f) && (!got || sh.distance < h.distance)) { h = sh; got = true; }
+                    if (got && Vector3.Dot(h.normal, normal) > 0.2f)
                     {
                         hit[i] = true;
                         verts[i] = h.point + h.normal * 0.004f;
