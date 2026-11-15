@@ -20,6 +20,7 @@ namespace GlassRoom
         [DllImport("__Internal")] static extern int WebPage_IsMobile();
         [DllImport("__Internal")] static extern void WebPage_ShowGone(string message);
         [DllImport("__Internal")] static extern void WebPage_Reload(string message);
+        [DllImport("__Internal")] static extern void WebPage_OpenGame(string url);
         /// <summary>True when running in a web page (where the page captures the pointer).</summary>
         public const bool InBrowser = true;
 #else
@@ -36,8 +37,12 @@ namespace GlassRoom
         static int WebPage_IsMobile() => 0;
         static void WebPage_ShowGone(string message) => UnityEngine.Debug.Log("Gone: " + message);
         static void WebPage_Reload(string message) => UnityEngine.Debug.Log("Reload: " + message);
+        static void WebPage_OpenGame(string url) => UnityEngine.Debug.Log("Open game: " + url);
         public const bool InBrowser = false;
 #endif
+
+        /// <summary>Shows another game full screen over this one (the page's ✕ closes it).</summary>
+        public static void OpenGame(string url) => WebPage_OpenGame(url);
 
         /// <summary>Tells the page whether to capture the pointer on the next click.</summary>
         public static void SetPointer(bool computer, bool menuOpen) => WebPage_SetPointer(computer ? 1 : 0, menuOpen ? 1 : 0);

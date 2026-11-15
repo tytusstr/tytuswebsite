@@ -113,6 +113,7 @@ namespace GlassRoom
             m_Interactables.AddRange(FindObjectsByType<MusicSpeaker>(FindObjectsSortMode.None));
             m_Interactables.AddRange(FindObjectsByType<Seat>(FindObjectsSortMode.None));
             m_Interactables.AddRange(FindObjectsByType<MarkerBoard>(FindObjectsSortMode.None));
+            m_Interactables.AddRange(FindObjectsByType<GameButton>(FindObjectsSortMode.None));
             SetupFootsteps();
             InputModeManager.ModeChanged += OnModeChanged;
             OnModeChanged(InputModeManager.Mode);
@@ -663,6 +664,7 @@ namespace GlassRoom
                 if (thing == null) thing = hit.collider.GetComponentInParent<MusicSpeaker>();
                 if (thing == null) thing = hit.collider.GetComponentInParent<Seat>();
                 if (thing == null) thing = hit.collider.GetComponentInParent<MarkerBoard>();
+                if (thing == null) thing = hit.collider.GetComponentInParent<GameButton>();
                 // The board only from right in front of it.
                 if (thing is MarkerBoard board && !board.InFront(transform.position)) continue;
                 if (thing == null || !WithinReach(hit.collider)) continue;
@@ -703,6 +705,11 @@ namespace GlassRoom
             if (thing is MarkerBoard && !rightButton && m_Ride == null && BoardPanel.Instance != null && !MarkerBoard.LocalBusy)
             {
                 BoardPanel.Instance.Open();
+                return;
+            }
+            if (thing is GameButton game && !rightButton && m_Ride == null)
+            {
+                game.Press();
                 return;
             }
             if (thing is Seat seat && !rightButton && m_Ride == null)
@@ -1468,6 +1475,7 @@ namespace GlassRoom
                 else if (m_Seat != null) m_Hud.SetKeyHints((Click, "to stand up"));
                 else if (target is Seat) m_Hud.SetKeyHints((Click, "to sit"));
                 else if (target is MarkerBoard) m_Hud.SetKeyHints((Click, "to write or draw"));
+                else if (target is GameButton && m_Ride == null) m_Hud.SetKeyHints((Click, "to play " + GameButton.Title));
                 else if (m_Ride != null) m_Hud.SetKeyHints((Click, "to get off"));
                 else if (target is StandUpScooter) m_Hud.SetKeyHints((Click, "to mount"));
                 else m_Hud.SetKeyHints();
@@ -1499,6 +1507,8 @@ namespace GlassRoom
                 m_Hud.SetContextButtons(("Mount", () => StepOn(scooter)));
             else if (near is Seat seat)
                 m_Hud.SetContextButtons(("Sit", () => SitDown(seat)));
+            else if (near is GameButton game)
+                m_Hud.SetContextButtons(("Play " + GameButton.Title, game.Press));
             else if (near is MarkerBoard nearBoard && nearBoard.InFront(transform.position) && !MarkerBoard.LocalBusy)
                 m_Hud.SetContextButtons(("Write/Draw", () => BoardPanel.Instance.Open()));
             else if (near is MusicSpeaker speaker)

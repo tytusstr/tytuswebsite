@@ -85,7 +85,8 @@ namespace GlassRoom
             // them go), is stopped and has to reload. That way nobody ends up playing on in a room
             // of their own that looks shared but isn't.
             if (m_Gone) return;
-            if (AnyInput()) m_LastInput = Time.unscaledTime;
+            // (Playing the game from the wall button counts as being here.)
+            if (AnyInput() || GameButton.IsOpen) m_LastInput = Time.unscaledTime;
             if (m_Ready && Time.unscaledTime - m_LastInput > IdleLimit)
                 Leave("You were away for 10 minutes, so you've left the room.");
             else if (m_JoinedAt >= 0f && m_Runner != null && !m_Runner.IsRunning && !m_Connecting)

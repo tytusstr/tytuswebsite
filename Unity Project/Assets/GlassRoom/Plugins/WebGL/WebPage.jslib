@@ -69,6 +69,11 @@ mergeInto(LibraryManager.library, {
   },
 
   // 1 while the page's loading / Enter screen still covers the game.
+  // Shows another game full screen over this one (window.openGame in index.html).
+  WebPage_OpenGame: function (urlPtr) {
+    if (typeof window.openGame === "function") window.openGame(UTF8ToString(urlPtr));
+  },
+
   WebPage_Covered: function () {
     return window.gameCovered ? 1 : 0;
   }

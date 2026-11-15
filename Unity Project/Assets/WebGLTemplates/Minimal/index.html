@@ -122,6 +122,13 @@
     #dots i:nth-child(2) { animation-delay: 0.2s; } #dots i:nth-child(3) { animation-delay: 0.4s; }
     @keyframes dot { 30% { opacity: 0.95; } 60% { opacity: 0.2; } }
     /* Kicked out (5 minutes without playing) or disconnected: reload to play again. */
+    #gameView { position: fixed; inset: 0; display: none; background: #000; z-index: 30; }
+    #gameView.open { display: block; }
+    #gameCrop { position: absolute; overflow: hidden; }
+    #gameFrame { position: absolute; left: 0; top: -48px; border: 0; display: block; }
+    #gameClose { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); z-index: 31;
+      width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(40,40,44,0.75); color: #fff; font-size: 20px; line-height: 40px;
+      text-align: center; cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent; }
     #gone { position: fixed; inset: 0; display: none; place-items: center; background: rgba(0,0,0,0.86); z-index: 20; color: rgba(255,255,255,0.9);
       font: 500 13px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; text-align: center; }
     #gone.open { display: grid; }
@@ -135,6 +142,7 @@
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
   <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" enterkeyhint="go" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
+  <div id="gameView"><div id="gameCrop"><iframe id="gameFrame" title="Game" allow="autoplay; fullscreen; gamepad" scrolling="no"></iframe></div><button id="gameClose" type="button" aria-label="Close">&#x2715;</button></div>
   <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
   <div id="nameEdit"><div class="col"><input id="editInput" type="text" enterkeyhint="done" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
@@ -406,6 +414,35 @@
       }, { capture: true, passive: false });
     });
     // The game stopped for you (idle too long, or the connection dropped): reload to come back.
+    // The wall button's game (see GameButton.cs): full screen over the room, its player's own
+    // top bar cropped off (48px), the stage as big as fits; the X closes it and stops it.
+    var gameView = document.getElementById("gameView"), gameCrop = document.getElementById("gameCrop"), gameFrame = document.getElementById("gameFrame");
+    function fitGame() {
+      var w = window.innerWidth, h = window.innerHeight;
+      var sw = Math.floor(Math.min(w, h * 4 / 3)), sh = Math.floor(sw * 3 / 4);
+      gameCrop.style.width = sw + "px"; gameCrop.style.height = sh + "px";
+      gameCrop.style.left = Math.floor((w - sw) / 2) + "px"; gameCrop.style.top = Math.floor((h - sh) / 2) + "px";
+      // (3px more all round, so the stage's thin border is cropped off too.)
+      gameFrame.style.left = "-3px"; gameFrame.style.top = "-51px";
+      gameFrame.style.width = (sw + 6) + "px"; gameFrame.style.height = (sh + 54) + "px";
+    }
+    window.addEventListener("resize", function () { if (gameView.classList.contains("open")) fitGame(); });
+    window.openGame = function (url) {
+      if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
+      fitGame();
+      gameView.classList.add("open");
+      gameFrame.src = url;
+      if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = true; } catch (e) {}
+      setTimeout(function () { try { gameFrame.focus(); } catch (e) {} }, 100);
+    };
+    document.getElementById("gameClose").addEventListener("click", function (e) {
+      e.stopPropagation();
+      gameFrame.src = "about:blank";
+      gameView.classList.remove("open");
+      if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = false; } catch (e) {}
+      if (window.unityGame) try { window.unityGame.SendMessage("Game Button", "Closed"); } catch (e) {}
+      canvas.focus({ preventScroll: true });
+    });
     window.showGone = function (message) {
       if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
       document.getElementById("goneText").textContent = message;
