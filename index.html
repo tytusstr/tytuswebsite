@@ -403,7 +403,8 @@
       var saved = "";
       try { saved = localStorage.getItem("glassRoomName") || ""; } catch (e) {}
       var name = (window.playerName || saved || "").replace(/\s+/g, "_").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
-      location.href = url + (name ? "?name=" + encodeURIComponent(name) : "");
+      // (A fresh copy every time, never one the phone saved from before an update.)
+      location.href = url + "?v=" + Date.now() + (name ? "&name=" + encodeURIComponent(name) : "");
     };
     window.showGone = function (message) {
       if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
