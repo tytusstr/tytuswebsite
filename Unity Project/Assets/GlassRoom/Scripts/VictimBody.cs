@@ -230,7 +230,7 @@ namespace GlassRoom
             Vector3 side = Vector3.Cross(Vector3.up, dir);
             Vector3 at = centre + side * Random.Range(-0.15f, 0.15f) + dir * Random.Range(-0.1f, 0.1f);
             float size = Random.Range(0.3f, 0.75f);
-            Stain("Drag Stain", mat, at + Vector3.up * (0.0045f + 0.00002f * (m_StainOrder % 40)),
+            Stain("Drag Stain", mat, new Vector3(at.x, BloodTracks.FloorY(at) + 0.0045f + 0.00002f * (m_StainOrder % 40), at.z),
                 Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), new Vector3(size * Random.Range(0.75f, 1.3f), 1f, size));
             if (BloodTracks.Instance != null) BloodTracks.Instance.AddPool(at, size * 0.35f);
             m_NextGap = Random.Range(0.22f, 0.6f);
@@ -262,7 +262,7 @@ namespace GlassRoom
                 m_PoolAt = centre;
                 m_PoolAge = 0f;
                 m_PoolRegistered = 0f;
-                go.transform.SetPositionAndRotation(centre + Vector3.up * 0.0042f, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+                go.transform.SetPositionAndRotation(new Vector3(centre.x, BloodTracks.FloorY(centre) + 0.0042f, centre.z), Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
             }
             m_PoolAge += dt;
             float size = Mathf.Lerp(0.3f, PoolMax, 1f - Mathf.Exp(-m_PoolAge / 160f));

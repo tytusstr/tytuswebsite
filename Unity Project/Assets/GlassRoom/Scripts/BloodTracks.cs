@@ -237,6 +237,25 @@ namespace GlassRoom
             Squelched?.Invoke(transform.position, loudness);
         }
 
+        /// <summary>
+        /// Height of the floor surface here: the floor itself (0) or something low and flat lying
+        /// on it, such as the rug, so blood marks sit on top of it instead of underneath.
+        /// </summary>
+        public static float FloorY(Vector3 at)
+        {
+            float best = 0f;
+            int n = Physics.RaycastNonAlloc(new Vector3(at.x, 0.25f, at.z), Vector3.down, s_Hits, 0.35f, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < n; i++)
+            {
+                var h = s_Hits[i];
+                if (h.normal.y < 0.9f || h.point.y > 0.06f || h.point.y <= best) continue;
+                if (h.collider is CharacterController || (h.rigidbody != null && !h.rigidbody.isKinematic)) continue;
+                best = h.point.y;
+            }
+            return best;
+        }
+        static readonly RaycastHit[] s_Hits = new RaycastHit[16];
+
         void PlaceMark(Material mat, Vector3 at, Quaternion rotation, Vector3 size, float strength, bool mirror)
         {
             Mark m;
@@ -258,7 +277,7 @@ namespace GlassRoom
             m.r.sharedMaterial = mat;
             m.r.enabled = true;
             // Slightly different heights so overlapping marks never flicker against each other.
-            m.t.SetPositionAndRotation(new Vector3(at.x, 0.0045f + (m_Marks.IndexOf(m) % 7) * 0.0004f, at.z), rotation);
+            m.t.SetPositionAndRotation(new Vector3(at.x, FloorY(at) + 0.0045f + (m_Marks.IndexOf(m) % 7) * 0.0004f, at.z), rotation);
             m.t.localScale = new Vector3(mirror ? -size.x : size.x, 1f, size.z);
             m.strength = Mathf.Clamp01(strength);
             Show(m);
