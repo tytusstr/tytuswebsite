@@ -791,6 +791,22 @@ namespace GlassRoom
             else if (what == "off" && m_Ride != null) StepOff();
         }
 
+        /// <summary>Testing only: on the nearest scooter, placed here facing this way, standing still.</summary>
+        public void TestRideAt(Vector3 at, float yaw)
+        {
+            if (m_Ride == null) TestAct("ride");
+            if (m_Ride == null) return;
+            at.y = m_Ride.transform.position.y;
+            var turn = Quaternion.Euler(0f, yaw, 0f);
+            m_Controller.enabled = false;
+            transform.SetPositionAndRotation(at, turn);
+            m_Ride.transform.SetPositionAndRotation(at, turn);
+            m_Yaw = m_BodyYaw = yaw;
+            m_RideSpeed = 0f;
+            m_RideLookYaw = 0f;
+            m_Controller.enabled = true;
+        }
+
         void SitDown(Seat seat)
         {
             // Someone else is already sitting there.

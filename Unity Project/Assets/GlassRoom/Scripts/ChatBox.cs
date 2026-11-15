@@ -256,6 +256,7 @@ namespace GlassRoom
         public void Add(string name, string message)
         {
             AddLine(new Message { name = name, text = message, time = Time.realtimeSinceStartup });
+            Debug.Log("Chat message from " + name + ": " + message);
             if (m_MessageClip != null) m_Sound.PlayOneShot(m_MessageClip, 0.45f);
         }
 
