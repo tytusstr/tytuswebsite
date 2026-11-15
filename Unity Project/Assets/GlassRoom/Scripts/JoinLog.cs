@@ -21,9 +21,9 @@ namespace GlassRoom
             name = (name ?? "").Trim();
             if (name.Length > 20) name = name.Substring(0, 20);
             long ms = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            string shown = name.Length > 0 ? name : "(no name)";
-            string json = "{\"n\":" + Quote(shown) + ",\"ms\":" + ms + ",\"t\":\"" + System.DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") + " UTC\"}";
-            yield return Send("PUT", Url + "/" + Key(shown) + ".json", json);
+            // No name: an entry of its own each time ("someone joined").
+            string json = "{\"n\":" + Quote(name) + ",\"ms\":" + ms + ",\"t\":\"" + System.DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") + " UTC\"}";
+            yield return Send("PUT", Url + "/" + (name.Length > 0 ? Key(name) : "a_" + ms) + ".json", json);
 
             // Only the latest 200: once there are a few too many, the oldest go.
             var request = UnityWebRequest.Get(Url + ".json");
