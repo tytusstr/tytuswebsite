@@ -268,8 +268,6 @@ namespace GlassRoom
                 dir.y = 0f;
                 VictimBody.Instance.Hit(body.worldCenterOfMass - dir.normalized * 0.15f, dir, float.Parse(a[1], inv));
             }
-            else if (a[0] == "rideat" && me != null) me.TestRideAt(new Vector3(float.Parse(a[1], inv), 0f, float.Parse(a[2], inv)), float.Parse(a[3], inv));
-            else if (a[0] == "getup" && me != null) me.GetUp();
             else if (a[0] == "hit" && me != null) me.TakeHit(Quaternion.Euler(0f, float.Parse(a[1], inv), 0f) * Vector3.forward, float.Parse(a[2], inv));
             else if (me != null) me.TestAct(a[0]);
             Dump();
