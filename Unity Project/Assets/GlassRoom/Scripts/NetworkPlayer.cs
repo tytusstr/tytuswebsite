@@ -392,6 +392,57 @@ namespace GlassRoom
 
         // ---- Scooter hits ----
 
+        // Your own prediction of a hit you just gave them: where they're thrown and whether they fall.
+        float m_PredictAt = -10f;
+        int m_PredictKnocks;
+        bool m_PredictBack, m_PredictDown;
+        Vector3 m_PredictPos, m_PredictVel, m_PredictDir;
+        float m_PredictDecel;
+
+        /// <summary>Your scooter just hit them (on foot or lying): shown here straight away.</summary>
+        public void PredictHit(Vector3 dir, float speed)
+        {
+            if (HasStateAuthority || Seated || Riding || m_Avatar == null) return;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return;
+            dir.Normalize();
+            if (IsDown)
+            {
+                if (m_Avatar.Ragdoll != null && m_Avatar.Ragdoll.Active) m_Avatar.Ragdoll.PredictHit(dir, speed);
+                return;
+            }
+            // The same throw their own game works out (see FirstPersonController.TakeHit).
+            const float knock = FirstPersonController.KnockSpeed;
+            bool falls = speed >= knock;
+            float t = Mathf.InverseLerp(knock, 8f, speed);
+            m_PredictDown = falls;
+            m_PredictKnocks = falls ? Knocks + 1 : Knocks;
+            m_PredictBack = Vector3.Dot(dir, transform.forward) < 0f;
+            m_PredictVel = dir * speed * (falls ? Mathf.Lerp(1.1f, 1.5f, t) : Mathf.Lerp(0.9f, 1.3f, speed / knock));
+            m_PredictDecel = falls ? 4f : 5f;
+            m_PredictDir = dir;
+            m_PredictPos = m_Avatar.transform.position;
+            m_PredictAt = Time.time;
+        }
+
+        // While the hit is new: shown at least as far along as the throw would have them by now
+        // (where they really are takes over once it catches up, or after a moment).
+        bool Predicting(ref Vector3 feet)
+        {
+            float age = Time.time - m_PredictAt;
+            if (age > 2.5f) return false;
+            bool caughtUp = m_PredictDown ? (Knocks >= m_PredictKnocks && IsDown) : age > 0.6f;
+            if (!caughtUp && age > 1.2f) { m_PredictAt = -10f; return false; } // it never happened there
+            float dt = Time.deltaTime;
+            m_PredictPos += m_PredictVel * dt;
+            m_PredictVel = Vector3.MoveTowards(m_PredictVel, Vector3.zero, m_PredictDecel * dt);
+            float lead = Vector3.Dot(m_PredictPos - feet, m_PredictDir);
+            // Fades out over the last second.
+            float fade = Mathf.Clamp01((2.5f - age) / 1f);
+            if (lead > 0f) feet += m_PredictDir * lead * fade;
+            return !caughtUp;
+        }
+
         /// <summary>You ran into this player on your scooter (sent to them only).</summary>
         public void Hit(NetworkPlayer target, Vector3 dir, float speed)
         {
@@ -402,7 +453,7 @@ namespace GlassRoom
         void RPC_Hit([RpcTarget] PlayerRef player, Vector3 dir, float speed)
         {
             var me = FindAnyObjectByType<FirstPersonController>();
-            if (me != null) me.TakeHit(dir, speed);
+            if (me != null) me.HitByRider(dir, speed);
         }
 
         // Chat: your message to everyone (you included, so it shows in your own chat too).
@@ -496,7 +547,12 @@ namespace GlassRoom
             float yaw = transform.eulerAngles.y;
             if (ride != null || seat != null) PlayerAvatar.Placement(feet, yaw, seat, ride, out feet, out yaw);
             m_Avatar.Move(Motion);
-            m_Avatar.Knock(IsDown, FellBackwards, Knocks);
+            // Just hit by your own scooter: knocked over (or shoved) here at once, thrown ahead of
+            // it; their game catches up a moment later.
+            bool predicted = Predicting(ref feet);
+            if (predicted) m_Avatar.Knock(m_PredictDown, m_PredictBack, m_PredictKnocks);
+            else m_Avatar.Knock(IsDown, FellBackwards, Knocks);
+            if (m_Avatar.Ragdoll != null) m_Avatar.Ragdoll.PassThrough(m_Me != null ? m_Me.GetComponent<CharacterController>() : null, m_Me != null && m_Me.CurrentRide != null);
             m_Avatar.Pose(feet, yaw, Speed, Seated, Time.deltaTime, PlayerAvatar.LeanBack(seat));
             // While you ride, people don't block you (your scooter pushes them on their side);
             // walking, you bump into them.
@@ -504,7 +560,7 @@ namespace GlassRoom
             // way themselves, so then you bump into them even riding. Lying limp, their body
             // itself is what you bump into.
             if (Beat != m_BeatSeen) { m_BeatSeen = Beat; m_BeatSeenAt = Time.unscaledTime; }
-            if (m_Body != null) m_Body.enabled = !IsDown && (m_Me == null || m_Me.CurrentRide == null || Stale);
+            if (m_Body != null) m_Body.enabled = !IsDown && !predicted && (m_Me == null || m_Me.CurrentRide == null || Stale);
             m_Avatar.Look(HeadYaw, HeadPitch);
             m_Avatar.Hold(ride);
             var board = MarkerBoard.Instance;

@@ -143,6 +143,10 @@ namespace GlassRoom
                 c.enabled = true;
                 if (ignore != null) Physics.IgnoreCollision(c, ignore, true);
             }
+            m_PassThrough = false;
+            SetUpHead();
+            m_Looking = m_LookApplied = false;
+            m_LookYaw = m_LookPitch = 0f;
             foreach (var rb in m_Bodies)
             {
                 rb.isKinematic = false;
@@ -157,7 +161,7 @@ namespace GlassRoom
             if (!m_Simulating) return;
             heading.y = 0f;
             heading.Normalize();
-            foreach (var rb in m_Bodies) rb.AddForce((heading + Vector3.up * 0.15f) * speed * 0.8f, ForceMode.VelocityChange);
+            foreach (var rb in m_Bodies) rb.AddForce((heading + Vector3.up * 0.15f) * speed * 1.3f, ForceMode.VelocityChange);
         }
 
         /// <summary>Lying where someone else's game has them (and bumpable here).</summary>
@@ -165,17 +169,21 @@ namespace GlassRoom
         {
             Build();
             if (m_Bodies == null || !Unpack(packed)) return;
+            m_HasTarget = true;
+            // Just hit here (by your own scooter): it flies on here for a moment first.
+            if (m_Simulating && Time.time < m_PredictUntil) return;
             if (!m_Following)
             {
+                // From the pose shown now (still falling, or flying from a hit) it glides into place.
+                if (!m_Simulating && m_Animator != null && !m_Animator.enabled) snap = true;
                 m_Simulating = false;
                 m_Following = true;
                 m_Blend = 1f;
-                snap = true;
                 if (m_Animator != null) m_Animator.enabled = false;
                 foreach (var rb in m_Bodies) rb.isKinematic = true;
                 foreach (var c in m_Colliders) c.enabled = true;
+                m_PassThrough = false; // (set again for the colliders as they are now)
             }
-            m_HasTarget = true;
             if (snap) for (int i = 0; i < m_Bodies.Length; i++) m_Bodies[i].transform.SetPositionAndRotation(m_TargetPos[i], m_TargetRot[i]);
         }
 
@@ -183,7 +191,8 @@ namespace GlassRoom
         public void End()
         {
             if (!Active) return;
-            m_Simulating = m_Following = m_HasTarget = false;
+            if (m_LookApplied && m_Bodies != null) m_Bodies[HeadIndex].transform.rotation = m_HeadPhys;
+            m_Simulating = m_Following = m_HasTarget = m_Looking = m_LookApplied = false;
             for (int i = 0; i < m_Bones.Length; i++) if (m_Bones[i] != null) m_From[i] = m_Bones[i].localRotation;
             m_FromRoot = m_Bodies[0].transform.position;
             foreach (var rb in m_Bodies) rb.isKinematic = true;
@@ -192,6 +201,88 @@ namespace GlassRoom
             m_Blend = 0f;
         }
         Vector3 m_FromRoot;
+
+        // ---- Shown here at once when your own scooter hits them (their game catches up) ----
+
+        float m_PredictUntil;
+
+        /// <summary>Your scooter hit them lying here: the body flies off now on your screen,
+        /// then goes back to where their game has it.</summary>
+        public void PredictHit(Vector3 heading, float speed)
+        {
+            if (m_Bodies == null || !Active) return;
+            if (m_Following)
+            {
+                m_Following = false;
+                m_Simulating = true;
+                foreach (var rb in m_Bodies) { rb.isKinematic = false; rb.linearVelocity = Vector3.zero; rb.WakeUp(); }
+            }
+            m_PredictUntil = Time.time + 0.6f;
+            Hit(heading, speed);
+        }
+
+        /// <summary>Whether this collider (a rider's) passes through the body (a scooter hits it rather than climbing on).</summary>
+        public void PassThrough(Collider other, bool pass)
+        {
+            if (m_Colliders == null || other == null || pass == m_PassThrough) return;
+            m_PassThrough = pass;
+            foreach (var c in m_Colliders) if (c != null) Physics.IgnoreCollision(c, other, pass);
+        }
+        bool m_PassThrough;
+
+        // ---- The head: turned by whoever is lying there, looking around (the rest stays limp) ----
+
+        const int HeadIndex = 2;
+        Vector3 m_HeadUp = Vector3.up, m_HeadFace = Vector3.forward; // in the head's own frame
+        float m_LookYaw, m_LookPitch;
+        bool m_Looking, m_LookApplied;
+        Quaternion m_HeadPhys;
+
+        // Which way is up the head and which way the face points, from the body itself (works in any pose).
+        void SetUpHead()
+        {
+            var head = m_Bodies[HeadIndex].transform;
+            var lArm = Find("Bip01 L UpperArm");
+            var rArm = Find("Bip01 R UpperArm");
+            if (m_Neck == null || lArm == null || rArm == null) return;
+            Vector3 up = (head.position - m_Neck.position).normalized;
+            Vector3 face = Vector3.Cross(up, lArm.position - rArm.position);
+            if (face.sqrMagnitude < 0.0001f) return;
+            m_HeadUp = head.InverseTransformDirection(up).normalized;
+            m_HeadFace = head.InverseTransformDirection(face.normalized).normalized;
+        }
+
+        Quaternion LookLocal => Quaternion.AngleAxis(m_LookYaw, m_HeadUp) * Quaternion.AngleAxis(m_LookPitch, Vector3.Cross(m_HeadUp, m_HeadFace));
+
+        Quaternion HeadRotation => (m_LookApplied ? m_HeadPhys : m_Bodies[HeadIndex].transform.rotation) * LookLocal;
+
+        /// <summary>Turns the head (degrees from straight ahead: up to 90 either way, like a real neck).</summary>
+        public void Look(float yaw, float pitch)
+        {
+            m_LookYaw = Mathf.Clamp(yaw, -90f, 90f);
+            m_LookPitch = Mathf.Clamp(pitch, -60f, 50f);
+            m_Looking = true;
+        }
+
+        /// <summary>Where the eyes are and which way they look (lying limp, on your own screen).</summary>
+        public bool Eyes(out Vector3 position, out Quaternion rotation)
+        {
+            position = default; rotation = Quaternion.identity;
+            if (!m_Simulating || m_Bodies == null) return false;
+            var head = m_Bodies[HeadIndex].transform;
+            Quaternion r = HeadRotation;
+            Vector3 up = r * m_HeadUp, face = r * m_HeadFace;
+            Vector3 centre = head.position + (m_LookApplied ? m_HeadPhys : head.rotation) * m_HeadUp * 0.09f;
+            position = centre + face * 0.1f + up * 0.02f;
+            rotation = Quaternion.LookRotation(face, up);
+            return true;
+        }
+
+        void FixedUpdate()
+        {
+            // Physics moves the head as it really lies; the turn is put back on after.
+            if (m_LookApplied) { m_Bodies[HeadIndex].transform.rotation = m_HeadPhys; m_LookApplied = false; }
+        }
 
         /// <summary>Lying on their back (else face down).</summary>
         public bool OnBack
@@ -217,6 +308,13 @@ namespace GlassRoom
 
         void LateUpdate()
         {
+            if (m_Simulating && m_Looking)
+            {
+                var head = m_Bodies[HeadIndex].transform;
+                if (!m_LookApplied) m_HeadPhys = head.rotation;
+                head.rotation = m_HeadPhys * LookLocal;
+                m_LookApplied = true;
+            }
             if (m_Following && m_HasTarget)
             {
                 float k = 1f - Mathf.Exp(-12f * Time.deltaTime);
@@ -258,7 +356,7 @@ namespace GlassRoom
             void F(float v) { System.BitConverter.GetBytes(v).CopyTo(bytes, o); o += 4; }
             void S(float v) { short s = (short)Mathf.Clamp(Mathf.RoundToInt(v), -32767, 32767); bytes[o++] = (byte)s; bytes[o++] = (byte)(s >> 8); }
             F(root.x); F(root.y); F(root.z);
-            for (int i = 0; i < n; i++) { var q = m_Bodies[i].transform.rotation; S(q.x * 32767f); S(q.y * 32767f); S(q.z * 32767f); S(q.w * 32767f); }
+            for (int i = 0; i < n; i++) { var q = i == HeadIndex && m_Looking ? HeadRotation : m_Bodies[i].transform.rotation; S(q.x * 32767f); S(q.y * 32767f); S(q.z * 32767f); S(q.w * 32767f); }
             for (int i = 1; i < n; i++) { Vector3 d = (m_Bodies[i].transform.position - root) * 1000f; S(d.x); S(d.y); S(d.z); }
             return System.Convert.ToBase64String(bytes);
         }

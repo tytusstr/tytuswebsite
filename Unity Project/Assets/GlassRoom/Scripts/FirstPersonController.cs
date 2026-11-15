@@ -1021,9 +1021,19 @@ namespace GlassRoom
                 if (apart.magnitude > reach) continue;
                 Vector3 dir = apart.magnitude > 0.01f ? apart.normalized : heading;
                 if (Vector3.Dot(heading, dir) < 0.1f) continue; // only what's in front of you
-                if (m_LastHit.TryGetValue(p, out float last) && Time.time - last < 0.7f) continue;
+                if (m_LastHit.TryGetValue(p, out float last) && Time.time - last < (p.IsDown ? 0.3f : 0.7f)) continue;
                 m_LastHit[p] = Time.time;
                 if (p.Riding) Multiplayer.Local.Hit(p, (dir + heading).normalized, speed * 0.5f);
+                else
+                {
+                    // Told straight away (their own game would only see your scooter a moment
+                    // later), and shown here at once: thrown ahead of you, never through you.
+                    float ahead = Vector3.Dot(apart, heading);
+                    Vector3 side = apart - heading * ahead;
+                    Vector3 sideways = side.sqrMagnitude > 0.0001f ? side.normalized * Mathf.Clamp01(side.magnitude / reach) * 0.5f : Vector3.zero;
+                    Multiplayer.Local.Hit(p, heading + sideways, speed);
+                    p.PredictHit(heading + sideways, speed);
+                }
                 if (speed > StandUpScooter.CrashSpeed) mine.Crash(speed);
                 m_RideSpeed *= p.Riding ? 0.6f : speed >= KnockSpeed ? 0.7f : 0.55f;
             }
@@ -1034,6 +1044,14 @@ namespace GlassRoom
         /// going (further the faster it was), and above <see cref="KnockSpeed"/> knocked over.
         /// On the ground: pushed along, and still down. Riding: your scooter is pushed.
         /// </summary>
+        /// <summary>A rider says their scooter hit you (unless you've just felt it yourself).</summary>
+        public void HitByRider(Vector3 dir, float speed)
+        {
+            if (Time.time - m_LastScooterHit < 0.45f) return;
+            m_LastScooterHit = Time.time;
+            TakeHit(dir, speed);
+        }
+
         public void TakeHit(Vector3 dir, float speed)
         {
             dir.y = 0f;
@@ -1179,6 +1197,17 @@ namespace GlassRoom
                 KeepRoomToLie();
             }
 
+            // Lying limp you look around by turning your head (as far as a neck goes); the rest of you stays limp.
+            bool limpView = limp != null && limp.Active && !m_Rising;
+            if (limpView)
+            {
+                if (!m_LimpLooking) { m_LimpLooking = true; m_LimpYaw = m_LimpPitch = 0f; }
+                m_LimpYaw = Mathf.Clamp(m_LimpYaw + look.x, -90f, 90f);
+                m_LimpPitch = Mathf.Clamp(m_LimpPitch - look.y, -60f, 50f);
+                limp.Look(m_LimpYaw, m_LimpPitch);
+                look = Vector2.zero;
+            }
+            else m_LimpLooking = false;
             m_Yaw = m_DownYaw + Mathf.Clamp(Mathf.DeltaAngle(m_DownYaw, m_Yaw + look.x), -35f, 35f);
             transform.rotation = Quaternion.Euler(0f, m_Yaw, 0f);
             m_BodyYaw = m_DownYaw;
@@ -1198,7 +1227,28 @@ namespace GlassRoom
                 cameraPivot.localRotation = Quaternion.Euler(m_Pitch, 0f, 0f);
             }
             else KeepViewInside();
+
+            // From the head's own eyes while limp, eased in and out.
+            if (limpView && limp.Eyes(out Vector3 eyePos, out Quaternion eyeRot))
+            {
+                float k = m_HeadView > 0.99f ? 1f - Mathf.Exp(-20f * dt) : 1f;
+                m_EyePos = m_HeadView > 0f ? Vector3.Lerp(m_EyePos, eyePos, k) : eyePos;
+                m_EyeRot = m_HeadView > 0f ? Quaternion.Slerp(m_EyeRot, eyeRot, k) : eyeRot;
+                m_HeadView = Mathf.MoveTowards(m_HeadView, 1f, dt / 0.35f);
+            }
+            else m_HeadView = Mathf.MoveTowards(m_HeadView, 0f, dt / 0.4f);
+            if (m_HeadView > 0f)
+            {
+                float w = Mathf.SmoothStep(0f, 1f, m_HeadView);
+                cameraPivot.SetPositionAndRotation(Vector3.Lerp(cameraPivot.position, m_EyePos, w), Quaternion.Slerp(cameraPivot.rotation, m_EyeRot, w));
+                KeepViewInside();
+            }
         }
+
+        bool m_LimpLooking;
+        float m_LimpYaw, m_LimpPitch, m_HeadView;
+        Vector3 m_EyePos;
+        Quaternion m_EyeRot = Quaternion.identity;
 
         // Lying down your body reaches out up to a metre or so from where you stood: you're
         // moved off any wall so all of it stays inside the room.
@@ -1282,7 +1332,7 @@ namespace GlassRoom
                 // In front of it: moved to stay just ahead, never through it.
                 float clear = Mathf.Sqrt(Mathf.Max(0f, gap * gap - side.sqrMagnitude)) + 0.02f;
                 if (clear > ahead) m_Controller.Move(heading * (clear - ahead));
-                if (Time.time - m_LastScooterHit > 0.5f)
+                if (Time.time - m_LastScooterHit > (Lying ? 0.25f : 0.5f))
                 {
                     m_LastScooterHit = Time.time;
                     Vector3 sideways = side.sqrMagnitude > 0.0001f ? side.normalized * Mathf.Clamp01(side.magnitude / gap) * 0.5f : Vector3.zero;
