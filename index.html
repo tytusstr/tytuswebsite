@@ -124,13 +124,7 @@
     /* Kicked out (5 minutes without playing) or disconnected: reload to play again. */
     #gameView { position: fixed; inset: 0; display: none; background: #000; z-index: 30; }
     #gameView.open { display: block; }
-    #gameCrop { position: absolute; overflow: hidden; }
-    #gameFrame { position: absolute; left: 0; top: -48px; border: 0; display: block; }
-    #gameWait { position: absolute; inset: 0; display: grid; place-items: center; background: #000; transition: opacity 0.4s ease; }
-    #gameWait.done { opacity: 0; pointer-events: none; }
-    #gameWait div { display: flex; gap: 9px; }
-    #gameWait i { width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: 0.2; animation: dot 1.2s ease-in-out infinite; }
-    #gameWait i:nth-child(2) { animation-delay: 0.2s; } #gameWait i:nth-child(3) { animation-delay: 0.4s; }
+    #gameFrame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #000; }
     #gameClose { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); z-index: 31;
       width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(40,40,44,0.75); color: #fff; font-size: 20px; line-height: 40px;
       text-align: center; cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -147,8 +141,7 @@
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
   <div id="loading"><div id="bar"><div id="fill"></div></div><div id="entry"><input id="name" type="text" enterkeyhint="go" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="enter" type="button" aria-label="Enter"><span id="label" data-text="ENTER">ENTER</span></button><div id="dots"><i></i><i></i><i></i></div></div></div>
-  <div id="gameView"><div id="gameCrop"><iframe id="gameFrame" title="Game" allow="autoplay; fullscreen; gamepad" scrolling="no"></iframe></div><div id="gameWait"><div><i></i><i></i><i></i></div></div><button id="gameClose" type="button" aria-label="Close">&#x2715;</button></div>
-  <div id="gone"><div class="col"><div id="goneText"></div><button id="reload" type="button" onclick="location.reload()">Reload</button></div></div>
+  <div id="gameView"><iframe id="gameFrame" title="Among Us" allow="autoplay; fullscreen; gamepad"></iframe><button id="gameClose" type="button" aria-label="Close">&#x2715;</button></div>
   <div id="nameEdit"><div class="col"><input id="editInput" type="text" enterkeyhint="done" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Your name" placeholder="Your name"><button id="editSave" type="button">Save</button></div></div>
   <script>
     // Phones (Safari) can refuse to restart the sound when you come back to the page
@@ -215,9 +208,9 @@
     var fill = document.getElementById("fill");
     var config = {
       arguments: [],
-      dataUrl: "Build/ad832ce367256f900c743ea9a6733440.data.unityweb",
+      dataUrl: "Build/c4a6aee6f2b2f514a1ccb48e313c9b84.data.unityweb",
       frameworkUrl: "Build/ba1fc1ae9f47958e04bcf6603d485dc1.framework.js.unityweb",
-      codeUrl: "Build/64b921bea893514a601aad2b5cb83f60.wasm.unityweb",
+      codeUrl: "Build/472afcd88b072d79a5543c87b6d87264.wasm.unityweb",
       streamingAssetsUrl: "StreamingAssets",
       companyName: "DefaultCompany",
       productName: "Tytuswebsite",
@@ -411,53 +404,22 @@
       }, { capture: true, passive: false });
     });
     // The game stopped for you (idle too long, or the connection dropped): reload to come back.
-    // The wall button's game (see GameButton.cs): full screen over the room, its player's own
-    // top bar cropped off (48px), the stage as big as fits; the X closes it and stops it.
-    var gameView = document.getElementById("gameView"), gameCrop = document.getElementById("gameCrop"), gameFrame = document.getElementById("gameFrame");
-    function fitGame() {
-      var w = window.innerWidth, h = window.innerHeight;
-      var sw = Math.floor(Math.min(w, h * 4 / 3)), sh = Math.floor(sw * 3 / 4);
-      gameCrop.style.width = sw + "px"; gameCrop.style.height = sh + "px";
-      gameCrop.style.left = Math.floor((w - sw) / 2) + "px"; gameCrop.style.top = Math.floor((h - sh) / 2) + "px";
-      // (3px more all round, so the stage's thin border is cropped off too.)
-      gameFrame.style.left = "-3px"; gameFrame.style.top = "-51px";
-      gameFrame.style.width = (sw + 6) + "px"; gameFrame.style.height = (sh + 54) + "px";
-    }
-    window.addEventListener("resize", function () { if (gameView.classList.contains("open")) fitGame(); });
-    // Its loading screen and opening logo stay hidden behind the dots: the page can't see into
-    // the game (it never says when it's ready), so this waits for its page to load and then
-    // about as long as the rest takes.
-    var gameWait = document.getElementById("gameWait"), gameTimer = null;
-    gameFrame.addEventListener("load", function () {
-      if (!gameView.classList.contains("open") || gameFrame.src === "about:blank") return;
-      clearTimeout(gameTimer);
-      // The first time on a device it downloads ~30 MB (about 13 s on fast wifi, longer on a
-      // phone); after that it's saved, and only its opening logo is left to wait out.
-      var before = false;
-      try { before = localStorage.getItem("amongUsLoaded") === "1"; } catch (e) {}
-      gameTimer = setTimeout(function () {
-        gameWait.classList.add("done");
-        try { localStorage.setItem("amongUsLoaded", "1"); } catch (e) {}
-      }, before ? 7000 : 25000);
-    });
+    // The wall button's game (see GameButton.cs): amongus.html (this site's own page, which runs
+    // the game and shows loading dots until its menu is up) full screen over the room; the X
+    // closes it and stops it.
+    var gameView = document.getElementById("gameView"), gameFrame = document.getElementById("gameFrame");
     window.openGame = function (url) {
       if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
-      fitGame();
-      clearTimeout(gameTimer);
-      gameWait.classList.remove("done");
       gameView.classList.add("open");
-      // The player's name in the game too (as a username the game's server accepts).
       var saved = "";
       try { saved = localStorage.getItem("glassRoomName") || ""; } catch (e) {}
       var name = (window.playerName || saved || "").replace(/\s+/g, "_").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
-      if (name) url += "&username=" + encodeURIComponent(name);
-      gameFrame.src = url;
+      gameFrame.src = url + (name ? (url.indexOf("?") < 0 ? "?" : "&") + "name=" + encodeURIComponent(name) : "");
       if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = true; } catch (e) {}
       setTimeout(function () { try { gameFrame.focus(); } catch (e) {} }, 100);
     };
     document.getElementById("gameClose").addEventListener("click", function (e) {
       e.stopPropagation();
-      clearTimeout(gameTimer);
       gameFrame.src = "about:blank";
       gameView.classList.remove("open");
       if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = false; } catch (e) {}

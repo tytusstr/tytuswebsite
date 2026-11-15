@@ -10,7 +10,7 @@ namespace GlassRoom
     /// </summary>
     public class GameButton : MonoBehaviour
     {
-        public const string Url = "https://turbowarp.org/523967150/embed?autoplay&hqpen&addons=remove-curved-stage-border";
+        public const string Url = "/amongus.html";
         public const string Title = "Among Us";
 
         /// <summary>True while the game is open over the room.</summary>
