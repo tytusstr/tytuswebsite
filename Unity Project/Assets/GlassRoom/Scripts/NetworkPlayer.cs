@@ -269,9 +269,11 @@ namespace GlassRoom
             if (!m_Driving) return;
             var ragdoll = m_Avatar != null ? m_Avatar.Ragdoll : null;
             var me = Multiplayer.Local;
-            if (ragdoll == null || !ragdoll.Active || !IsDown || me == null) { m_Driving = false; return; }
+            if (ragdoll == null || !ragdoll.Active || me == null) { m_Driving = false; return; }
+            // Their game never knocked them over after all: back on their feet here too.
+            if (!IsDown && Time.time - m_LastPush > 1.5f) { ragdoll.End(); m_Driving = false; return; }
             ragdoll.Hold(0.3f);
-            bool done = (Time.time - m_LastPush > 1.2f && !ragdoll.Moving) || Time.time - m_LastPush > 4f;
+            bool done = (Time.time - m_LastPush > 1.5f && !ragdoll.Moving) || Time.time - m_LastPush > 5f;
             if (done || Time.time >= m_NextDriveSend)
             {
                 m_NextDriveSend = Time.time + 1f / 15f;
@@ -299,7 +301,7 @@ namespace GlassRoom
         // Someone else's scooter is moving this body: shown where their game has it.
         void ShowDriven(string packed, bool release)
         {
-            if (m_Avatar == null || !IsDown) return;
+            if (m_Avatar == null) return;
             m_DrivenUntil = release ? 0f : Time.time + 0.6f;
             m_Avatar.Ragdoll.Follow(packed, false);
         }
@@ -480,6 +482,18 @@ namespace GlassRoom
             // The same throw their own game works out (see FirstPersonController.TakeHit).
             const float knock = FirstPersonController.KnockSpeed;
             bool falls = speed >= knock;
+            // Knocked over: limp at once here, flying ahead of your scooter, and your game shows
+            // everyone (them included) where the body goes until it settles.
+            if (falls && m_Avatar.Ragdoll != null)
+            {
+                float tk = Mathf.InverseLerp(knock, 8f, speed);
+                m_Avatar.Ragdoll.BeginHit(dir, speed * Mathf.Lerp(1.0f, 1.25f, tk), null);
+                m_Avatar.Ragdoll.Hold(0.6f);
+                m_Driving = true;
+                m_LastPush = Time.time;
+                m_PredictAt = -10f;
+                return;
+            }
             float t = Mathf.InverseLerp(knock, 8f, speed);
             m_PredictDown = falls;
             m_PredictKnocks = falls ? Knocks + 1 : Knocks;
@@ -632,7 +646,7 @@ namespace GlassRoom
             // way themselves, so then you bump into them even riding. Lying limp, their body
             // itself is what you bump into.
             if (Beat != m_BeatSeen) { m_BeatSeen = Beat; m_BeatSeenAt = Time.unscaledTime; }
-            if (m_Body != null) m_Body.enabled = !IsDown && !predicted && (m_Me == null || m_Me.CurrentRide == null || Stale);
+            if (m_Body != null) m_Body.enabled = !IsDown && !predicted && LimpBody == null && (m_Me == null || m_Me.CurrentRide == null || Stale);
             m_Avatar.Look(HeadYaw, HeadPitch);
             Drive();
             m_Avatar.Hold(ride);

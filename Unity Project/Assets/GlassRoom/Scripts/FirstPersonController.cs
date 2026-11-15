@@ -1016,17 +1016,18 @@ namespace GlassRoom
                 if (p == null || p.IsLocal || p.Seated || p.Object == null || !p.Object.IsValid) continue;
                 Vector3 them = p.Riding && Multiplayer.ScooterAt(p.RideIndex) != null ? Multiplayer.ScooterAt(p.RideIndex).transform.position : p.transform.position;
                 // Lying limp: where the body is on your screen (your game moves it once you hit it).
-                if (p.IsDown && p.LimpBody != null) them = p.LimpBody.position;
+                bool lying = (p.IsDown || p.LimpBody != null) && !p.Riding;
+                if (lying && p.LimpBody != null) them = p.LimpBody.position;
                 Vector3 apart = them - me;
                 apart.y = 0f;
-                float reach = mine.footprintRadius + (p.Riding ? 0.38f : p.IsDown ? 0.45f : 0.22f);
+                float reach = mine.footprintRadius + (p.Riding ? 0.38f : lying ? 0.45f : 0.22f);
                 if (apart.magnitude > reach) continue;
                 Vector3 dir = apart.magnitude > 0.01f ? apart.normalized : heading;
                 if (Vector3.Dot(heading, dir) < 0.1f) continue; // only what's in front of you
                 bool had = m_LastHit.TryGetValue(p, out float last);
-                if (had && Time.time - last < (p.IsDown ? 0.1f : 0.7f)) continue;
+                if (had && Time.time - last < (lying ? 0.1f : 0.7f)) continue;
                 m_LastHit[p] = Time.time;
-                if (p.IsDown && !p.Riding)
+                if (lying)
                 {
                     // Lying on the floor: your game moves the body (and shows everyone, them
                     // included) until it settles, so it's pushed the moment you touch it and
@@ -1097,6 +1098,9 @@ namespace GlassRoom
             }
             m_Knock = dir * speed * Mathf.Lerp(1.1f, 1.5f, t);
             Fall(dir);
+            // Straight into a rag doll, thrown the way the scooter was going (no recording first).
+            var body = Limp;
+            if (body != null) body.BeginHit(dir, speed * Mathf.Lerp(1.0f, 1.25f, t), m_Controller);
         }
 
         // Knocked over: backwards if hit from the front, onto your front if from behind.

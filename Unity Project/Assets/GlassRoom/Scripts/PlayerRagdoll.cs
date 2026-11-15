@@ -156,6 +156,27 @@ namespace GlassRoom
             }
         }
 
+        /// <summary>Hit by a scooter standing up: limp at once, thrown the way it was going. The
+        /// top of the body is carried a little faster than the legs, so it goes over (onto the
+        /// back if it was facing the scooter, onto the front if not) as it flies.</summary>
+        public void BeginHit(Vector3 heading, float speed, Collider ignore)
+        {
+            heading.y = 0f;
+            if (heading.sqrMagnitude < 0.0001f) return;
+            heading.Normalize();
+            Begin(Vector3.zero, ignore);
+            if (m_Bodies == null) return;
+            float v = speed * 1.1f;
+            for (int i = 0; i < m_Bodies.Length; i++)
+            {
+                string b = k_Parts[i].bone;
+                float share = b.Contains("Calf") ? 0.55f : b.Contains("Thigh") ? 0.75f : b == "Bip01 Pelvis" ? 0.9f : 1.15f;
+                float up = b.Contains("Calf") || b.Contains("Thigh") ? 0.5f : 1.1f;
+                m_Bodies[i].linearVelocity = heading * v * share + Vector3.up * up;
+                m_Bodies[i].angularVelocity = Vector3.zero;
+            }
+        }
+
         /// <summary>Hit by a scooter while lying here: shoved along, harder the faster it was going.</summary>
         public void Hit(Vector3 heading, float speed)
         {

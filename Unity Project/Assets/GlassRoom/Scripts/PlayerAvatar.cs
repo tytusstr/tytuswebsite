@@ -125,7 +125,9 @@ namespace GlassRoom
             if (count != m_KnocksShown)
             {
                 m_KnocksShown = count;
-                if (!first && down && HasParameter(k_Fall))
+                // (Gone limp already: no falling recording, and none left waiting to play later.)
+                if (m_Ragdoll != null && m_Ragdoll.Active) { if (HasParameter(k_Fall)) m_Animator.ResetTrigger(k_Fall); }
+                else if (!first && down && HasParameter(k_Fall))
                 {
                     m_Animator.SetBool(k_Backwards, backwards);
                     m_Animator.SetTrigger(k_Fall);
