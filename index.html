@@ -425,12 +425,20 @@
     }
     window.addEventListener("resize", function () { if (gameView.classList.contains("open")) fitGame(); });
     // Its loading screen and opening logo stay hidden behind the dots: the page can't see into
-    // the game, so this waits for the page to load and then the time those take (~2.5 s + ~2.5 s).
+    // the game (it never says when it's ready), so this waits for its page to load and then
+    // about as long as the rest takes.
     var gameWait = document.getElementById("gameWait"), gameTimer = null;
     gameFrame.addEventListener("load", function () {
       if (!gameView.classList.contains("open") || gameFrame.src === "about:blank") return;
       clearTimeout(gameTimer);
-      gameTimer = setTimeout(function () { gameWait.classList.add("done"); }, 6000);
+      // The first time on a device it downloads ~30 MB (about 13 s on fast wifi, longer on a
+      // phone); after that it's saved, and only its opening logo is left to wait out.
+      var before = false;
+      try { before = localStorage.getItem("amongUsLoaded") === "1"; } catch (e) {}
+      gameTimer = setTimeout(function () {
+        gameWait.classList.add("done");
+        try { localStorage.setItem("amongUsLoaded", "1"); } catch (e) {}
+      }, before ? 7000 : 25000);
     });
     window.openGame = function (url) {
       if (document.exitPointerLock) try { document.exitPointerLock(); } catch (e) {}
@@ -439,7 +447,9 @@
       gameWait.classList.remove("done");
       gameView.classList.add("open");
       // The player's name in the game too (as a username the game's server accepts).
-      var name = (window.playerName || "").replace(/\s+/g, "_").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
+      var saved = "";
+      try { saved = localStorage.getItem("glassRoomName") || ""; } catch (e) {}
+      var name = (window.playerName || saved || "").replace(/\s+/g, "_").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20);
       if (name) url += "&username=" + encodeURIComponent(name);
       gameFrame.src = url;
       if (window.__webMusic && window.__webMusic.el) try { window.__webMusic.el.muted = true; } catch (e) {}
