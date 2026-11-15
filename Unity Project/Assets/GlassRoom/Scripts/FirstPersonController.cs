@@ -1015,15 +1015,26 @@ namespace GlassRoom
             {
                 if (p == null || p.IsLocal || p.Seated || p.Object == null || !p.Object.IsValid) continue;
                 Vector3 them = p.Riding && Multiplayer.ScooterAt(p.RideIndex) != null ? Multiplayer.ScooterAt(p.RideIndex).transform.position : p.transform.position;
+                // Lying limp: where the body is on your screen (your game moves it once you hit it).
+                if (p.IsDown && p.LimpBody != null) them = p.LimpBody.position;
                 Vector3 apart = them - me;
                 apart.y = 0f;
                 float reach = mine.footprintRadius + (p.Riding ? 0.38f : p.IsDown ? 0.45f : 0.22f);
                 if (apart.magnitude > reach) continue;
                 Vector3 dir = apart.magnitude > 0.01f ? apart.normalized : heading;
                 if (Vector3.Dot(heading, dir) < 0.1f) continue; // only what's in front of you
-                if (m_LastHit.TryGetValue(p, out float last) && Time.time - last < (p.IsDown ? 0.3f : 0.7f)) continue;
+                bool had = m_LastHit.TryGetValue(p, out float last);
+                if (had && Time.time - last < (p.IsDown ? 0.1f : 0.7f)) continue;
                 m_LastHit[p] = Time.time;
-                if (p.Riding) Multiplayer.Local.Hit(p, (dir + heading).normalized, speed * 0.5f);
+                if (p.IsDown && !p.Riding)
+                {
+                    // Lying on the floor: your game moves the body (and shows everyone, them
+                    // included) until it settles, so it's pushed the moment you touch it and
+                    // never lags behind or lets you through. Slowed only on first touching it.
+                    p.PushLimp(heading, speed);
+                    if (had && Time.time - last < 0.5f) continue;
+                }
+                else if (p.Riding) Multiplayer.Local.Hit(p, (dir + heading).normalized, speed * 0.5f);
                 else
                 {
                     // Told straight away (their own game would only see your scooter a moment
@@ -1047,6 +1058,7 @@ namespace GlassRoom
         /// <summary>A rider says their scooter hit you (unless you've just felt it yourself).</summary>
         public void HitByRider(Vector3 dir, float speed)
         {
+            if (Driven) return;
             if (Time.time - m_LastScooterHit < 0.45f) return;
             m_LastScooterHit = Time.time;
             TakeHit(dir, speed);
@@ -1141,9 +1153,25 @@ namespace GlassRoom
             }
         }
 
+        float m_DrivenUntil;
+
+        /// <summary>A rider's game is moving your body (it hit you lying there): yours follows it,
+        /// and takes over again where it left it.</summary>
+        public void DrivenLimp(string packed, bool release)
+        {
+            var limp = Limp;
+            if (!Lying || limp == null || !limp.Active) return;
+            if (release) { limp.Follow(packed, true); limp.Release(); m_DrivenUntil = 0f; return; }
+            limp.Follow(packed, false);
+            m_DrivenUntil = Time.time + 0.6f;
+        }
+
+        bool Driven => Time.time < m_DrivenUntil;
+
         /// <summary>The limp body's pose to share, or null when not lying limp (and whether it's still moving).</summary>
         public string LimpPose(out bool moving)
         {
+            if (Driven) { moving = false; return null; }
             var body = GetComponent<LocalPlayerBody>();
             var limp = body != null && body.Avatar != null ? body.Avatar.GetComponent<PlayerRagdoll>() : null;
             moving = limp != null && limp.Moving;
@@ -1190,6 +1218,8 @@ namespace GlassRoom
             // (Not on the moment you've finished getting up: you're standing again then.)
             if (m_Down && !m_Rising && limp != null && !limp.Active && m_DownTime >= (m_DownBackwards ? 0.55f : 1.3f))
                 limp.Begin(new Vector3(m_Knock.x, 0f, m_Knock.z) * 0.85f, m_Controller);
+            // A rider's game stopped moving your body without saying so: yours takes over.
+            if (limp != null && limp.Following && !Driven) limp.Release();
             if (m_Down && limp != null && limp.Active && !m_Rising)
             {
                 Vector3 hips = limp.Pelvis.position;
@@ -1344,6 +1374,7 @@ namespace GlassRoom
                 // In front of it: moved to stay just ahead, never through it.
                 float clear = Mathf.Sqrt(Mathf.Max(0f, gap * gap - side.sqrMagnitude)) + 0.02f;
                 if (clear > ahead) m_Controller.Move(heading * (clear - ahead));
+                if (Lying && Driven) continue; // the rider's game is moving you
                 if (Time.time - m_LastScooterHit > (Lying ? 0.25f : 0.5f))
                 {
                     m_LastScooterHit = Time.time;

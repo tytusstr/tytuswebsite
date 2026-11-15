@@ -236,7 +236,72 @@ namespace GlassRoom
         [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
         void RPC_Limp(string packed)
         {
+            // (Not while a rider's game is moving the body: theirs is the one to show.)
+            if (Time.time < m_DrivenUntil || m_Driving) return;
             if (m_Avatar != null && IsDown) m_Avatar.Ragdoll.Follow(packed, false);
+        }
+
+        // ---- A lying body hit by a scooter: the rider's game moves it, and shows everyone ----
+
+        float m_DrivenUntil, m_LastPush, m_NextDriveSend;
+        bool m_Driving;
+
+        /// <summary>Their limp body as shown here (null when not lying limp).</summary>
+        public Transform LimpBody => m_Avatar != null && m_Avatar.Ragdoll != null && m_Avatar.Ragdoll.Active ? m_Avatar.Ragdoll.Pelvis : null;
+
+        /// <summary>Your scooter is pushing their limp body: it moves here, now, and everyone
+        /// (them included) is shown where it goes until it settles.</summary>
+        public void PushLimp(Vector3 heading, float speed)
+        {
+            var ragdoll = m_Avatar != null ? m_Avatar.Ragdoll : null;
+            if (HasStateAuthority || ragdoll == null || !ragdoll.Active) return;
+            heading.y = 0f;
+            if (heading.sqrMagnitude < 0.0001f) return;
+            ragdoll.PredictHit(heading.normalized, speed);
+            m_Driving = true;
+            m_LastPush = Time.time;
+        }
+
+        // While you're moving their body: shared about 15 times a second; once it has settled
+        // (or after a few seconds) it's handed back to their game where it lies.
+        void Drive()
+        {
+            if (!m_Driving) return;
+            var ragdoll = m_Avatar != null ? m_Avatar.Ragdoll : null;
+            var me = Multiplayer.Local;
+            if (ragdoll == null || !ragdoll.Active || !IsDown || me == null) { m_Driving = false; return; }
+            ragdoll.Hold(0.3f);
+            bool done = (Time.time - m_LastPush > 1.2f && !ragdoll.Moving) || Time.time - m_LastPush > 4f;
+            if (done || Time.time >= m_NextDriveSend)
+            {
+                m_NextDriveSend = Time.time + 1f / 15f;
+                me.SendDrive(PlayerId, ragdoll.Pack(), done);
+            }
+            if (done) m_Driving = false; // (their own game's updates take over from here)
+        }
+
+        void SendDrive(int player, string packed, bool release)
+        {
+            if (Object != null && Object.IsValid && HasStateAuthority) RPC_DriveLimp(player, packed, release);
+        }
+
+        [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
+        void RPC_DriveLimp(int player, string packed, NetworkBool release)
+        {
+            foreach (var p in Multiplayer.Players)
+            {
+                if (p == null || p.PlayerId != player) continue;
+                if (p.HasStateAuthority) { var fp = FindAnyObjectByType<FirstPersonController>(); if (fp != null) fp.DrivenLimp(packed, release); }
+                else p.ShowDriven(packed, release);
+            }
+        }
+
+        // Someone else's scooter is moving this body: shown where their game has it.
+        void ShowDriven(string packed, bool release)
+        {
+            if (m_Avatar == null || !IsDown) return;
+            m_DrivenUntil = release ? 0f : Time.time + 0.6f;
+            m_Avatar.Ragdoll.Follow(packed, false);
         }
 
         // ---- The body on the floor: where it is, blood it splashes on walls, its thuds ----
@@ -566,6 +631,7 @@ namespace GlassRoom
             if (Beat != m_BeatSeen) { m_BeatSeen = Beat; m_BeatSeenAt = Time.unscaledTime; }
             if (m_Body != null) m_Body.enabled = !IsDown && !predicted && (m_Me == null || m_Me.CurrentRide == null || Stale);
             m_Avatar.Look(HeadYaw, HeadPitch);
+            Drive();
             m_Avatar.Hold(ride);
             var board = MarkerBoard.Instance;
             if (board != null && board.ActiveAuthor == PlayerId) m_Avatar.UseBoard(board.PenPoint, board.Facing, board.ActiveTool, board.PenColor);

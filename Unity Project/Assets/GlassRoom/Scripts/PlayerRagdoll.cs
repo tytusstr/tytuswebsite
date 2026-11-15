@@ -144,17 +144,7 @@ namespace GlassRoom
                 if (ignore != null) Physics.IgnoreCollision(c, ignore, true);
             }
             m_PassThrough = false;
-            // Scooters and other people's shapes don't knock the limp body about (a scooter that
-            // runs into it pushes it along instead; see Hit).
-            foreach (var scooter in FindObjectsByType<StandUpScooter>(FindObjectsInactive.Exclude))
-                foreach (var other in scooter.GetComponentsInChildren<Collider>())
-                    foreach (var c in m_Colliders) Physics.IgnoreCollision(c, other, true);
-            foreach (var avatar in FindObjectsByType<PlayerAvatar>(FindObjectsInactive.Exclude))
-            {
-                if (avatar.gameObject == gameObject) continue;
-                foreach (var other in avatar.GetComponents<Collider>())
-                    foreach (var c in m_Colliders) Physics.IgnoreCollision(c, other, true);
-            }
+            IgnoreOthers();
             SetUpHead();
             m_Looking = m_LookApplied = false;
             m_LookYaw = m_LookPitch = 0f;
@@ -236,14 +226,42 @@ namespace GlassRoom
         public void PredictHit(Vector3 heading, float speed)
         {
             if (m_Bodies == null || !Active) return;
-            if (m_Following)
-            {
-                m_Following = false;
-                m_Simulating = true;
-                foreach (var rb in m_Bodies) { rb.isKinematic = false; rb.linearVelocity = Vector3.zero; rb.WakeUp(); }
-            }
-            m_PredictUntil = Time.time + 0.6f;
+            if (m_Following) Release();
+            Hold(0.6f);
             Hit(heading, speed);
+        }
+
+        // Scooters and other people's shapes don't knock the limp body about (a scooter that
+        // runs into it pushes it along instead; see Hit).
+        void IgnoreOthers()
+        {
+            if (m_Colliders == null) return;
+            foreach (var scooter in FindObjectsByType<StandUpScooter>(FindObjectsInactive.Exclude))
+                foreach (var other in scooter.GetComponentsInChildren<Collider>())
+                    foreach (var c in m_Colliders) Physics.IgnoreCollision(c, other, true);
+            foreach (var avatar in FindObjectsByType<PlayerAvatar>(FindObjectsInactive.Exclude))
+            {
+                if (avatar.gameObject == gameObject) continue;
+                foreach (var other in avatar.GetComponents<Collider>())
+                    foreach (var c in m_Colliders) Physics.IgnoreCollision(c, other, true);
+            }
+        }
+
+        /// <summary>Moving here (not following someone else's game) for at least this long.</summary>
+        public void Hold(float seconds) => m_PredictUntil = Mathf.Max(m_PredictUntil, Time.time + seconds);
+
+        /// <summary>Following someone else's game (not moving here).</summary>
+        public bool Following => m_Following;
+
+        /// <summary>From following someone else's game to moving here, from the pose it's in now.</summary>
+        public void Release()
+        {
+            if (!m_Following || m_Bodies == null) return;
+            if (m_HasTarget) for (int i = 0; i < m_Bodies.Length; i++) m_Bodies[i].transform.SetPositionAndRotation(m_TargetPos[i], m_TargetRot[i]);
+            m_Following = m_HasTarget = false;
+            m_Simulating = true;
+            IgnoreOthers();
+            foreach (var rb in m_Bodies) { rb.isKinematic = false; rb.linearVelocity = Vector3.zero; rb.angularVelocity = Vector3.zero; rb.WakeUp(); }
         }
 
         /// <summary>Whether this collider (a rider's) passes through the body (a scooter hits it rather than climbing on).</summary>
@@ -293,7 +311,7 @@ namespace GlassRoom
         public bool Eyes(out Vector3 position, out Quaternion rotation)
         {
             position = default; rotation = Quaternion.identity;
-            if (!m_Simulating || m_Bodies == null) return false;
+            if (!Active || m_Bodies == null) return false;
             var head = m_Bodies[HeadIndex].transform;
             Quaternion r = HeadRotation;
             Vector3 up = r * m_HeadUp, face = r * m_HeadFace;
