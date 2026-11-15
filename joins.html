@@ -17,6 +17,7 @@
   th { color: var(--muted); font-weight: 500; font-size: 13px; }
   td.n { color: var(--muted); width: 3em; }
   tr:last-child td { border-bottom: 0; }
+  td.anon { color: var(--muted); font-style: italic; }
   td.when { white-space: nowrap; color: var(--muted); }
 </style>
 </head>
@@ -32,6 +33,7 @@
     .then(function (r) { return r.json(); })
     .then(function (data) {
       var list = Object.keys(data || {}).map(function (k) { return data[k]; }).filter(function (e) { return e && e.ms; });
+      list.forEach(function (e) { if (!e.n || e.n === "(no name)") { e.n = "Someone joined"; e.anon = true; } });
       list.sort(function (a, b) { return b.ms - a.ms; });
       var fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
       var rows = document.getElementById("rows");
@@ -40,7 +42,7 @@
         [String(i + 1), String(e.n), fmt.format(new Date(e.ms))].forEach(function (text, c) {
           var td = document.createElement("td");
           td.textContent = text;
-          td.className = c === 0 ? "n" : c === 2 ? "when" : "";
+          td.className = c === 0 ? "n" : c === 2 ? "when" : e.anon ? "anon" : "";
           tr.appendChild(td);
         });
         rows.appendChild(tr);
