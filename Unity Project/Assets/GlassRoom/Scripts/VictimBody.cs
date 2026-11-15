@@ -276,14 +276,25 @@ namespace GlassRoom
         /// <summary>A splash of blood on a wall (made here, or by whoever threw it there).</summary>
         public void WallStain(Vector3 at, Vector3 normal, float size, bool share)
         {
-            if (wallMaterial == null) return;
-            normal.y = 0f;
-            if (normal.sqrMagnitude < 0.01f) return;
+            if (wallMaterial == null || normal.sqrMagnitude < 0.01f) return;
             normal.Normalize();
-            // A flat square standing on the wall, a few millimetres out from it.
-            var rotation = Quaternion.FromToRotation(Vector3.up, normal) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            Stain("Wall Splash", wallMaterial, at + normal * 0.004f, rotation, new Vector3(size, 1f, size));
-            if (BloodTracks.Instance != null) BloodTracks.Instance.AddPool(new Vector3(at.x, 0f, at.z) + normal * 0.25f, 0.18f);
+            // The surface it hit: the nearest thing behind the contact that isn't the body or a player.
+            Collider surface = null; float best = float.MaxValue;
+            foreach (var h in Physics.RaycastAll(at + normal * 0.3f, -normal, 0.7f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (h.collider.GetComponentInParent<VictimBody>() != null || h.collider.GetComponent<CharacterController>() != null) continue;
+                if (h.distance < best) { best = h.distance; surface = h.collider; }
+            }
+            if (surface == null) return;
+            var mesh = Wrapped(surface, at, normal, size);
+            if (mesh == null) return;
+            var r = Stain("Wall Splash", wallMaterial, Vector3.zero, Quaternion.identity, Vector3.one, mesh);
+            r.transform.SetParent(surface.transform, true);
+            if (BloodTracks.Instance != null && Mathf.Abs(normal.y) < 0.5f)
+            {
+                var flat = new Vector3(normal.x, 0f, normal.z).normalized;
+                BloodTracks.Instance.AddPool(new Vector3(at.x, 0f, at.z) + flat * 0.25f, 0.18f);
+            }
             if (share)
             {
                 StainShared?.Invoke(at, normal, size);
@@ -291,23 +302,74 @@ namespace GlassRoom
             }
         }
 
-        Renderer Stain(string name, Material mat, Vector3 at, Quaternion rotation, Vector3 scale)
+        // A splash shaped to the surface: a grid of points dropped onto the thing it hit, so it
+        // lies on curves and stops at edges and corners instead of hanging off them.
+        static Mesh Wrapped(Collider surface, Vector3 at, Vector3 normal, float size)
         {
-            Renderer r;
-            if (m_Stains.Count >= MaxStains)
+            const int N = 14;
+            Vector3 u = Vector3.Cross(normal, Mathf.Abs(normal.y) > 0.9f ? Vector3.forward : Vector3.up).normalized;
+            Vector3 v = Vector3.Cross(normal, u);
+            float spin = Random.Range(0f, Mathf.PI * 2f);
+            Vector3 a = u * Mathf.Cos(spin) + v * Mathf.Sin(spin), b = Vector3.Cross(normal, a);
+            var verts = new Vector3[(N + 1) * (N + 1)];
+            var uvs = new Vector2[verts.Length];
+            var norms = new Vector3[verts.Length];
+            var hit = new bool[verts.Length];
+            float reach = size * 0.6f + 0.3f, cell = size / N;
+            for (int y = 0; y <= N; y++)
+                for (int x = 0; x <= N; x++)
+                {
+                    int i = y * (N + 1) + x;
+                    float fx = (float)x / N, fy = (float)y / N;
+                    uvs[i] = new Vector2(fx, fy);
+                    Vector3 p = at + a * ((fx - 0.5f) * size) + b * ((fy - 0.5f) * size);
+                    if (surface.Raycast(new Ray(p + normal * reach, -normal), out var h, reach * 2f) && Vector3.Dot(h.normal, normal) > 0.2f)
+                    {
+                        hit[i] = true;
+                        verts[i] = h.point + h.normal * 0.004f;
+                        norms[i] = h.normal;
+                    }
+                }
+            var tris = new List<int>();
+            float jump = Mathf.Max(cell * 2.5f, 0.05f);
+            bool Ok(int i, int j) => hit[i] && hit[j] && (verts[i] - verts[j]).magnitude < jump * 1.5f;
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    int i0 = y * (N + 1) + x, i1 = i0 + 1, i2 = i0 + N + 1, i3 = i2 + 1;
+                    if (Ok(i0, i2) && Ok(i2, i3) && Ok(i0, i3)) { tris.Add(i0); tris.Add(i2); tris.Add(i3); }
+                    if (Ok(i0, i3) && Ok(i3, i1) && Ok(i0, i1)) { tris.Add(i0); tris.Add(i3); tris.Add(i1); }
+                }
+            if (tris.Count == 0) return null;
+            var m = new Mesh { name = "Wall Splash" };
+            m.vertices = verts; m.uv = uvs; m.normals = norms;
+            m.SetTriangles(tris, 0);
+            m.RecalculateTangents();
+            m.RecalculateBounds();
+            return m;
+        }
+
+        Renderer Stain(string name, Material mat, Vector3 at, Quaternion rotation, Vector3 scale, Mesh mesh = null)
+        {
+            Renderer r = null;
+            while (m_Stains.Count >= MaxStains && r == null)
             {
                 r = m_Stains[0];
                 m_Stains.RemoveAt(0);
             }
-            else
+            if (r == null)
             {
                 var go = new GameObject(name);
-                go.AddComponent<MeshFilter>().sharedMesh = m_Quad;
+                go.AddComponent<MeshFilter>();
                 r = go.AddComponent<MeshRenderer>();
-                r.sharedMaterial = mat;
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 r.receiveShadows = true;
             }
+            var filter = r.GetComponent<MeshFilter>();
+            if (filter.sharedMesh != null && filter.sharedMesh != m_Quad) Destroy(filter.sharedMesh);
+            filter.sharedMesh = mesh != null ? mesh : m_Quad;
+            r.transform.SetParent(null, false);
+            r.name = name;
             r.sharedMaterial = mat;
             // Later stains draw over earlier ones (no flicker where they overlap).
             r.sortingOrder = ++m_StainOrder;
@@ -339,7 +401,7 @@ namespace GlassRoom
             float impact = c.relativeVelocity.magnitude;
             if (impact < 1.2f || c.contactCount == 0) return;
             var contact = c.GetContact(0);
-            bool wall = Mathf.Abs(contact.normal.y) < 0.5f && c.collider.GetComponent<CharacterController>() == null;
+            bool wall = contact.normal.y < 0.5f && c.collider.GetComponent<CharacterController>() == null;
             if (wall && impact > 1.6f) WallStain(contact.point, contact.normal, Mathf.Clamp(0.35f + impact * 0.12f, 0.35f, 1.1f), true);
             else if (Time.time - m_LastSound > 0.25f) Sound(0, contact.point, Mathf.Clamp01(impact / 5f), true);
         }
