@@ -378,7 +378,9 @@
           if (t.getName() === "Buttons") buttons = t;
           if (t.getName() === "Transitions") transition = t;
         }
-        var menu = buttons && buttons.visible && buttons.getCostumes()[buttons.currentCostume].name === "Online";
+        // ("Online2" is the same button lit up, when the finger or mouse is over it: on a phone,
+        // the tap that picked the server leaves the "finger" right where it appears.)
+        var menu = buttons && buttons.visible && /^Online2?$/.test(buttons.getCostumes()[buttons.currentCostume].name);
         if (menu && !(transition && transition.visible)) { clearInterval(timer); show(); }
       }, 100);
     }
