@@ -199,6 +199,14 @@
     var canvas = document.getElementById("unity-canvas");
     var loading = document.getElementById("loading");
     var fill = document.getElementById("fill");
+    // Which pictures file to load: the phones' one (ASTC) where the graphics chip reads it,
+    // otherwise the computers' one (DXT). See WebsiteBuilder.cs.
+    window.astcPictures = (function () {
+      try {
+        var gl = document.createElement("canvas").getContext("webgl2");
+        return !!(gl && gl.getExtension("WEBGL_compressed_texture_astc") && !gl.getExtension("WEBGL_compressed_texture_s3tc"));
+      } catch (e) { return false; }
+    })();
     var config = {
       arguments: [],
       dataUrl: "Build/{{{ DATA_FILENAME }}}",

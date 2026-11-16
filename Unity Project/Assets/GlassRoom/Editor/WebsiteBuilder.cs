@@ -27,21 +27,104 @@ namespace GlassRoom.Editor
 
             if (Directory.Exists(OutputFolder)) Directory.Delete(OutputFolder, true);
             if (!PrepareWebScene()) return;
-            var options = new BuildPlayerOptions
+            // Two builds: pictures packed for computers' graphics chips (DXT), and again for
+            // phones' (ASTC). iPhones can't read DXT, so with it they unpack every picture to full
+            // size in memory, and phones with less memory crash while loading. The game code is the
+            // same in both, so the page just loads the pictures file its device can read.
+            if (Directory.Exists(AstcFolder)) Directory.Delete(AstcFolder, true);
+            BuildReport report, astc = null;
+            // (Phones' first, kept aside: Unity removes a previous build's files when it builds again.)
+            string keptPhone = null, keptCode = null;
+            try
+            {
+                astc = BuildTo(AstcFolder, WebGLTextureSubtarget.ASTC);
+                if (astc.summary.result == BuildResult.Succeeded)
+                {
+                    keptPhone = Path.Combine(Path.GetTempPath(), "glassroom-phone-" + Path.GetFileName(FindFile(AstcFolder, ".data.unityweb")));
+                    File.Copy(FindFile(AstcFolder, ".data.unityweb"), keptPhone, true);
+                    keptCode = Path.GetFileName(FindFile(AstcFolder, ".wasm.unityweb")) + "|" + Path.GetFileName(FindFile(AstcFolder, ".framework.js.unityweb"));
+                }
+                report = BuildTo(OutputFolder, WebGLTextureSubtarget.DXT);
+            }
+            finally
+            {
+                EditorUserBuildSettings.webGLBuildSubtarget = WebGLTextureSubtarget.DXT;
+                SetPictureFormat(TextureCompressionFormat.DXTC);
+                CleanUpWebScene();
+            }
+            var summary = report.summary;
+            if (summary.result != BuildResult.Succeeded)
+            {
+                Debug.LogError($"Website build failed: {summary.result}, {summary.totalErrors} errors");
+                return;
+            }
+            if (keptPhone == null) Debug.LogError("Website build: the phone (ASTC) build failed; computers' pictures only.");
+            else AddPhonePictures(keptPhone, keptCode);
+            if (Directory.Exists(AstcFolder)) Directory.Delete(AstcFolder, true);
+            Debug.Log($"Website build succeeded: {Path.GetFullPath(OutputFolder)} ({summary.totalSize / (1024 * 1024)} MB)");
+        }
+
+        const string AstcFolder = "WebBuild-ASTC";
+
+        // Player Settings > Web > Texture Compression Format (what the build actually goes by).
+        static void SetPictureFormat(TextureCompressionFormat format)
+        {
+            var settings = new SerializedObject(Unsupported.GetSerializedAssetInterfaceSingleton("PlayerSettings"));
+            var targets = settings.FindProperty("m_BuildTargetDefaultTextureCompressionFormat");
+            for (int i = 0; targets != null && i < targets.arraySize; i++)
+            {
+                var entry = targets.GetArrayElementAtIndex(i);
+                if (entry.FindPropertyRelative("m_BuildTarget").stringValue != "WebGL") continue;
+                var formats = entry.FindPropertyRelative("m_Formats");
+                formats.arraySize = 1;
+                formats.GetArrayElementAtIndex(0).intValue = (int)format;
+            }
+            settings.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static BuildReport BuildTo(string folder, WebGLTextureSubtarget pictures)
+        {
+            SetPictureFormat(pictures == WebGLTextureSubtarget.ASTC ? TextureCompressionFormat.ASTC : TextureCompressionFormat.DXTC);
+            EditorUserBuildSettings.webGLBuildSubtarget = pictures;
+            return BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = new[] { WebScene },
-                locationPathName = OutputFolder,
+                locationPathName = folder,
                 target = BuildTarget.WebGL,
                 options = BuildOptions.None
-            };
-            BuildReport report;
-            try { report = BuildPipeline.BuildPlayer(options); }
-            finally { CleanUpWebScene(); }
-            var summary = report.summary;
-            if (summary.result == BuildResult.Succeeded)
-                Debug.Log($"Website build succeeded: {Path.GetFullPath(OutputFolder)} ({summary.totalSize / (1024 * 1024)} MB)");
-            else
-                Debug.LogError($"Website build failed: {summary.result}, {summary.totalErrors} errors");
+            });
+        }
+
+        static string FindFile(string folder, string ending)
+        {
+            string dir = Path.Combine(folder, "Build");
+            if (!Directory.Exists(dir)) return null;
+            foreach (var f in Directory.GetFiles(dir)) if (f.EndsWith(ending)) return f;
+            return null;
+        }
+
+        // Puts the phone build's pictures file next to the computer build's, and has the page
+        // pick between them (window.astcPictures, set in the page template).
+        static void AddPhonePictures(string keptPhone, string phoneCode)
+        {
+            // Only if the game code really is the same in both.
+            string code = Path.GetFileName(FindFile(OutputFolder, ".wasm.unityweb")) + "|" + Path.GetFileName(FindFile(OutputFolder, ".framework.js.unityweb"));
+            if (code != phoneCode)
+            {
+                Debug.LogError("Website build: the two builds' code differs; computers' pictures only.");
+                return;
+            }
+            string dxt = FindFile(OutputFolder, ".data.unityweb");
+            if (dxt == null) return;
+            string phoneName = Path.GetFileName(keptPhone).Replace("glassroom-phone-", "");
+            File.Copy(keptPhone, Path.Combine(OutputFolder, "Build", phoneName), true);
+            File.Delete(keptPhone);
+            string page = Path.Combine(OutputFolder, "index.html");
+            string html = File.ReadAllText(page);
+            string line = $"dataUrl: \"Build/{Path.GetFileName(dxt)}\"";
+            if (!html.Contains(line)) { Debug.LogError("Website build: couldn't find the pictures file in the page."); return; }
+            html = html.Replace(line, $"dataUrl: window.astcPictures ? \"Build/{phoneName}\" : \"Build/{Path.GetFileName(dxt)}\"");
+            File.WriteAllText(page, html);
         }
 
         // Copies the songs to StreamingAssets and saves a copy of the scene whose speaker refers
@@ -98,6 +181,7 @@ namespace GlassRoom.Editor
             PlayerSettings.WebGL.decompressionFallback = true;
             PlayerSettings.WebGL.dataCaching = true;
             PlayerSettings.WebGL.showDiagnostics = false;
+            SetPictureFormat(TextureCompressionFormat.DXTC);
             AssetDatabase.SaveAssets();
         }
     }

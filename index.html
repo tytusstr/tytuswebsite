@@ -199,9 +199,17 @@
     var canvas = document.getElementById("unity-canvas");
     var loading = document.getElementById("loading");
     var fill = document.getElementById("fill");
+    // Which pictures file to load: the phones' one (ASTC) where the graphics chip reads it,
+    // otherwise the computers' one (DXT). See WebsiteBuilder.cs.
+    window.astcPictures = (function () {
+      try {
+        var gl = document.createElement("canvas").getContext("webgl2");
+        return !!(gl && gl.getExtension("WEBGL_compressed_texture_astc") && !gl.getExtension("WEBGL_compressed_texture_s3tc"));
+      } catch (e) { return false; }
+    })();
     var config = {
       arguments: [],
-      dataUrl: "Build/d89becabfb39a616e63eeab418276589.data.unityweb",
+      dataUrl: window.astcPictures ? "Build/a30231ff28b6a8bf9df66b12f65a50dc.data.unityweb" : "Build/ff442e7d19a4019259d60fcfc1237aad.data.unityweb",
       frameworkUrl: "Build/ba1fc1ae9f47958e04bcf6603d485dc1.framework.js.unityweb",
       codeUrl: "Build/787ac0ad77a212309118feb6e5d70c65.wasm.unityweb",
       streamingAssetsUrl: "StreamingAssets",
