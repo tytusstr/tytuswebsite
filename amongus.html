@@ -31,17 +31,7 @@
     .server:hover, .server:focus-visible { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.5); outline: none; }
     .server b { display: block; font-size: clamp(17px, 4.6vw, 22px); font-weight: 600; margin-bottom: 10px; }
     .server span { display: block; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.65); }
-    /* Tytus server chat. */
-    #chatLog { position: fixed; left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); z-index: 4; width: min(70vw, 420px);
-      display: flex; flex-direction: column; gap: 4px; pointer-events: none; font: 500 14px/1.35 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; }
-    #chatLog div { align-self: flex-start; max-width: 100%; padding: 5px 10px; border-radius: 10px; background: rgba(0,0,0,0.6); color: #fff; overflow-wrap: anywhere;
-      transition: opacity 0.6s ease; }
-    #chatLog div.old { opacity: 0; }
-    #chatLog u { text-decoration: none; color: rgba(255,255,255,0.65); }
-    #chatBtn { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); z-index: 4; display: none;
-      padding: 9px 16px; border-radius: 18px; border: 0; background: rgba(40,40,44,0.8); color: #fff; font: 600 14px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
-      cursor: pointer; -webkit-tap-highlight-color: transparent; }
-    #chatBtn.on { display: block; }
+    /* Tytus server chat: the text box that replaces the game's phrase picker. */
     #chatBar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; display: none; gap: 8px; padding: 10px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
       background: rgba(20,20,22,0.95); }
     #chatBar.open { display: flex; }
@@ -64,15 +54,13 @@
       </div>
     </div>
   </div>
-  <div id="chatLog"></div>
-  <button id="chatBtn" type="button">Chat</button>
-  <div id="chatBar"><input id="chatText" type="text" maxlength="150" enterkeyhint="send" autocomplete="off" autocorrect="on" placeholder="Say something"><button id="chatSend" type="button">Send</button></div>
+  <div id="chatBar"><input id="chatText" type="text" maxlength="70" enterkeyhint="send" autocomplete="off" autocorrect="on" placeholder="Say something"><button id="chatSend" type="button">Send</button></div>
   <script src="https://cdn.jsdelivr.net/npm/@turbowarp/scaffolding@0.4.0/dist/scaffolding-min.js"></script>
   <script>
     // Among Us (Scratch project 523967150) run right here, on TurboWarp's engine and online
     // server. First you pick a server: the World Server is the game's own room there (the same
     // players as on turbowarp.org); the Tytus Server is a room of this site's own on the same
-    // server, so only people who come here are in it, and it has a free-text chat of its own.
+    // server, so only people who come here are in it, and its chat is typed instead of phrases.
     // The game downloads while you choose; then loading dots until its menu is on screen (or a
     // minute at most).
     var PROJECT = "523967150";
@@ -84,7 +72,6 @@
       if (shown) return;
       shown = true;
       wait.classList.add("done");
-      if (server === "tytus") document.getElementById("chatBtn").classList.add("on");
       try { parent.postMessage({ amongUs: "ready" }, location.origin); } catch (e) {}
     }
 
@@ -225,12 +212,16 @@
     load().catch(function (e) { console.error(e); show(); });
 
     // ---- Tytus Server chat ----
-    // Its own room on the same server (one shared value, "☁ chat"). The server only passes on
-    // numbers, so each message travels as digits: the time it was sent (13 digits), then every
-    // character of "name\ntext" as 5 digits.
+    // The game's own chat, but typed: tapping its "add a message" bar opens a text box here
+    // instead of the phrase picker, and what you type goes into the game's chat window (its last
+    // 4 messages, each with name, colour, alive and voted marks) on everyone's screen. The game
+    // can only send its phrases itself, so typed messages travel separately, in a room of their
+    // own on the same server ("☁ chat"). The server only passes on numbers, so each message is
+    // digits: the time it was sent (13 digits), then every character of
+    // "name\ncolour\nalive\nvoted\ntext" as 5 digits.
     var chatSocket = null, chatQueue = [];
-    function encodeChat(text) {
-      var plain = name + "\n" + text, out = String(Date.now());
+    function encodeChat(plain) {
+      var out = String(Date.now());
       for (var i = 0; i < plain.length; i++) out += ("00000" + plain.charCodeAt(i)).slice(-5);
       return out;
     }
@@ -238,20 +229,24 @@
       if (!/^\d{13}(\d{5})+$/.test(digits)) return null;
       var sent = Number(digits.slice(0, 13)), plain = "";
       for (var i = 13; i < digits.length; i += 5) plain += String.fromCharCode(Number(digits.slice(i, i + 5)));
-      var cut = plain.indexOf("\n");
-      return cut < 0 ? null : { sent: sent, from: plain.slice(0, cut), text: plain.slice(cut + 1) };
+      var parts = plain.split("\n");
+      return parts.length < 5 ? null : { sent: sent, from: parts[0], color: parts[1], alive: parts[2], voted: parts[3], text: parts.slice(4).join(" ") };
     }
-    function addLine(from, text) {
-      var log = document.getElementById("chatLog");
-      var line = document.createElement("div");
-      var who = document.createElement("u");
-      who.textContent = from + ": ";
-      line.appendChild(who);
-      line.appendChild(document.createTextNode(text));
-      log.appendChild(line);
-      while (log.children.length > 6) log.removeChild(log.firstChild);
-      setTimeout(function () { line.classList.add("old"); }, 12000);
-      setTimeout(function () { if (line.parentNode) line.parentNode.removeChild(line); }, 12700);
+    function stageVar(n) {
+      var st = vm.runtime.getTargetForStage();
+      for (var id in st.variables) if (st.variables[id].name === n) return st.variables[id];
+      return null;
+    }
+    // Into the game's chat window, as the game does it for a message.
+    function addToGameChat(m) {
+      var lists = { "0_CHAT_FROM": m.from, "0_CHAT_ID": "typed", "0_CHAT_DECODED": m.text, "0_CHAT_COLOR": m.color, "0_CHAT_VOTED_SIGN": m.voted, "0_CHAT_ALIVE?": m.alive };
+      for (var n in lists) {
+        var l = stageVar(n);
+        if (!l) continue;
+        l.value.push(lists[n]);
+        if (l.value.length > 4) l.value.shift();
+        l._monitorUpToDate = false;
+      }
     }
     function startChat() {
       chatSocket = new WebSocket(CLOUD);
@@ -267,23 +262,39 @@
             if (m.method !== "set" || m.name !== "☁ chat") return;
             var msg = decodeChat(String(m.value));
             // (On joining, the server repeats the last message; only fresh ones are shown.)
-            if (msg && Math.abs(Date.now() - msg.sent) < 30000) addLine(msg.from, msg.text);
+            if (msg && Math.abs(Date.now() - msg.sent) < 30000) addToGameChat(msg);
           } catch (err) {}
         });
       };
       chatSocket.onclose = function () { setTimeout(startChat, 3000); };
+      // Each frame: if the game opens its phrase picker, close it and open the text box instead.
+      vm.runtime.on("AFTER_EXECUTE", function () {
+        var mode = stageVar("_TalkMode");
+        if (mode && String(mode.value) !== "0") {
+          mode.value = "0";
+          var talk = stageVar("Talk"); if (talk) talk.value = "";
+          var code = stageVar("Talk Code"); if (code) code.value = "";
+          if (!chatBar.classList.contains("open")) openChat();
+        }
+      });
     }
+    var lastSent = 0;
     function sendChat(text) {
-      text = text.replace(/\s+/g, " ").trim().slice(0, 150);
-      if (!text) return;
-      var packet = JSON.stringify({ method: "set", name: "☁ chat", value: encodeChat(text) }) + "\n";
+      text = text.replace(/\s+/g, " ").trim().slice(0, 70);
+      if (!text || Date.now() - lastSent < 1500) return;
+      lastSent = Date.now();
+      var v = function (n, d) { var x = stageVar(n); return x ? String(x.value) : d; };
+      var voteFrom = stageVar("0_VOTE_from");
+      var color = v("_____@MY.color", "1");
+      var voted = voteFrom && v("modus", "") === "voting" && voteFrom.value.map(String).indexOf(color) >= 0 ? "1" : "0";
+      var msg = { from: name, color: color, alive: v("alive?", "1"), voted: voted, text: text };
+      var packet = JSON.stringify({ method: "set", name: "☁ chat", value: encodeChat([msg.from, msg.color, msg.alive, msg.voted, msg.text].join("\n")) }) + "\n";
       if (chatSocket && chatSocket.readyState === 1) chatSocket.send(packet); else chatQueue.push(packet);
-      addLine(name, text);
+      addToGameChat(msg);
     }
     var chatBar = document.getElementById("chatBar"), chatText = document.getElementById("chatText");
-    function openChat() { chatBar.classList.add("open"); chatText.value = ""; chatText.focus(); }
+    function openChat() { chatBar.classList.add("open"); chatText.value = ""; setTimeout(function () { chatText.focus(); }, 0); }
     function closeChat() { chatText.blur(); chatBar.classList.remove("open"); }
-    document.getElementById("chatBtn").addEventListener("click", openChat);
     document.getElementById("chatSend").addEventListener("click", function () { sendChat(chatText.value); closeChat(); });
     // Typing never reaches the game; Enter sends, Escape closes.
     ["keydown", "keyup", "keypress"].forEach(function (type) {
@@ -296,6 +307,17 @@
     ["touchstart", "touchmove", "touchend", "mousedown", "pointerdown"].forEach(function (type) {
       chatBar.addEventListener(type, function (e) { e.stopPropagation(); }, { passive: true });
     });
+    // (A phone only brings up its keyboard for a box focused during a tap: so when the finger
+    // that opened it lifts.)
+    ["touchend", "pointerup", "mouseup"].forEach(function (type) {
+      document.addEventListener(type, function () {
+        if (chatBar.classList.contains("open") && document.activeElement !== chatText) chatText.focus();
+      }, true);
+    });
+    // Tapping anywhere else closes the box without sending.
+    document.addEventListener("pointerdown", function (e) {
+      if (chatBar.classList.contains("open") && !chatBar.contains(e.target)) closeChat();
+    }, true);
 
     // Ready once the menu's Online button is showing.
     function watchForMenu() {
