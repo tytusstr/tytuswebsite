@@ -88,12 +88,17 @@
     // Two people from here with the same name can't both play (the game says "double session
     // detected"), so if someone from here is already playing Among Us under your name, you play
     // as TYTUS2, TYTUS3, ... instead. Only in Among Us: your name on the site stays the same.
+    // This device's own entry from last time (say, before a refresh, which doesn't always get to
+    // say it left) doesn't count as someone else, so coming back keeps your name.
+    var lastKey = "";
+    try { lastKey = localStorage.getItem("amongUsKey") || ""; } catch (e) {}
     var nameReady = (given ? fetch(DB + '.json?orderBy="$key"&startAt="away_"&endAt="away_~"')
       .then(function (r) { return r.json(); })
       .then(function (all) {
         var taken = {};
         Object.keys(all || {}).forEach(function (k) {
           var e = all[k];
+          if (k === lastKey) return;
           if (e && e.t === "playing" && e.n && Date.now() - e.ms < 75000) taken[String(e.n).toLowerCase()] = true;
         });
         var base = given;
@@ -102,7 +107,9 @@
       .then(function () {
         if (given) name = given;
         scaffolding.setUsername(name);
-        me = DB + "/away_" + (given ? given.toLowerCase() : "a_" + Date.now()) + ".json";
+        var key = "away_" + (given ? given.toLowerCase() : "a_" + Date.now());
+        try { localStorage.setItem("amongUsKey", key); } catch (e) {}
+        me = DB + "/" + key + ".json";
         checkIn("playing");
       });
     setInterval(function () { checkIn("playing"); }, 20000);
@@ -206,6 +213,7 @@
           var stage = vm.runtime.getTargetForStage();
           for (var id in stage.variables) if (stage.variables[id].name === "controls") stage.variables[id].value = "1";
           loaded = true;
+          trimMemory();
           begin();
         });
     }
@@ -318,6 +326,33 @@
     document.addEventListener("pointerdown", function (e) {
       if (chatBar.classList.contains("open") && !chatBar.contains(e.target)) closeChat();
     }, true);
+
+    // ---- Memory ----
+    // The game keeps, for every picture it has ever shown, a drawn copy, a copy on the graphics
+    // card and one for "touching" checks. Over a game that's hundreds of pictures, and a phone
+    // runs out of memory part way through. So every 10 s, pictures that haven't been shown for
+    // 30 s let go of those copies (they're redrawn the moment they're needed again).
+    function trimMemory() {
+      var r = vm.renderer, sample = null;
+      for (var i = 0; i < r._allSkins.length && !sample; i++) if (r._allSkins[i] && r._allSkins[i]._svgImage) sample = r._allSkins[i];
+      if (!sample) return;
+      var proto = Object.getPrototypeOf(sample);
+      var getTexture = proto.getTexture, updateSilhouette = proto.updateSilhouette;
+      proto.getTexture = function () { this._usedAt = performance.now(); return getTexture.apply(this, arguments); };
+      proto.updateSilhouette = function () { this._usedAt = performance.now(); return updateSilhouette.apply(this, arguments); };
+      setInterval(function () {
+        var now = performance.now(), showing = new Set();
+        r._allDrawables.forEach(function (d) { if (d && d.skin) showing.add(d.skin); });
+        r._allSkins.forEach(function (skin) {
+          if (!skin || !skin._svgImage || showing.has(skin) || now - (skin._usedAt || 0) < 30000) return;
+          if (!skin._scaledMIPs.length && !skin._canvas.width && !skin._silhouette._colorData && !skin._silhouette._lazyData) return;
+          skin.resetMIPs();
+          skin._canvas.width = 0;
+          skin._canvas.height = 0;
+          skin._silhouette = new skin._silhouette.constructor();
+        });
+      }, 10000);
+    }
 
     // Ready once the menu's Online button is showing.
     function watchForMenu() {
