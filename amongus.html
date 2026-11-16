@@ -212,6 +212,20 @@
           // own setting: "controls" 0 = Joystick, 1 = Touch; it can still be changed in its settings).
           var stage = vm.runtime.getTargetForStage();
           for (var id in stage.variables) if (stage.variables[id].name === "controls") stage.variables[id].value = "1";
+          // The game kicks you after 2 minutes without doing anything (its "__inactivity timeout",
+          // counted in seconds, against 120); here that's 10 minutes.
+          vm.runtime.targets.forEach(function (t) {
+            if (!t.isOriginal) return;
+            var blocks = t.blocks._blocks;
+            Object.keys(blocks).forEach(function (id) {
+              var b = blocks[id];
+              if (b.opcode !== "operator_gt" || !b.inputs.OPERAND1 || !b.inputs.OPERAND2) return;
+              var left = blocks[b.inputs.OPERAND1.block], right = blocks[b.inputs.OPERAND2.block];
+              if (left && left.opcode === "data_variable" && left.fields.VARIABLE.value === "__inactivity timeout"
+                  && right && right.fields && right.fields.TEXT && String(right.fields.TEXT.value) === "120") right.fields.TEXT.value = "600";
+            });
+            t.blocks.resetCache();
+          });
           loaded = true;
           trimMemory();
           begin();
