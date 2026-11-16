@@ -224,6 +224,18 @@
               if (left && left.opcode === "data_variable" && left.fields.VARIABLE.value === "__inactivity timeout"
                   && right && right.fields && right.fields.TEXT && String(right.fields.TEXT.value) === "120") right.fields.TEXT.value = "600";
             });
+            // The joystick (when it's switched on) sits a bit further in from the bottom-left
+            // corner, so your thumb isn't on the edge of the screen: (-170, -115) instead of
+            // (-200, -145). The knob and dragging all work from wherever it is.
+            if (t.getName() === "Pen&TextEngine") Object.keys(blocks).forEach(function (id) {
+              var b = blocks[id];
+              if (b.opcode !== "motion_gotoxy") return;
+              var x = blocks[b.inputs.X && b.inputs.X.block], y = blocks[b.inputs.Y && b.inputs.Y.block];
+              if (x && y && x.fields.NUM && y.fields.NUM && String(x.fields.NUM.value) === "-200" && String(y.fields.NUM.value) === "-145") {
+                x.fields.NUM.value = "-170";
+                y.fields.NUM.value = "-115";
+              }
+            });
             t.blocks.resetCache();
           });
           loaded = true;
