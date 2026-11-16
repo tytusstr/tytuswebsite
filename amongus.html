@@ -208,10 +208,10 @@
         .then(function (data) { return scaffolding.loadProject(data); })
         .then(function () {
           applySettings();
-          // Always starts on Touch controls instead of the joystick, on computers too (the game's
-          // own setting: "controls" 0 = Joystick, 1 = Touch; it can still be changed in its settings).
+          // Starts on the joystick on phones and on Touch on computers (the game's own setting:
+          // "controls" 0 = Joystick, 1 = Touch; it can still be changed in its settings).
           var stage = vm.runtime.getTargetForStage();
-          for (var id in stage.variables) if (stage.variables[id].name === "controls") stage.variables[id].value = "1";
+          for (var id in stage.variables) if (stage.variables[id].name === "controls") stage.variables[id].value = phone ? "0" : "1";
           // The game kicks you after 2 minutes without doing anything (its "__inactivity timeout",
           // counted in seconds, against 120); here that's 10 minutes.
           vm.runtime.targets.forEach(function (t) {
